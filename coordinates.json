@@ -1,0 +1,99 @@
+{
+  "reference_resolution": {
+    "width": 567,
+    "height": 1014
+  },
+  "elements": {
+    "tab_1_primary": {
+      "title": "Tab 1: Primary",
+      "description": "Tab 1: Xuc xac trang Primary",
+      "box_567x1014": { "x": 260, "y": 196, "w": 65, "h": 70 },
+      "center_567x1014": { "x": 292, "y": 231 },
+      "ratio": { "x": 0.4585, "y": 0.1933, "w": 0.1146, "h": 0.0690 }
+    },
+    "tab_2_vip5_medium": {
+      "title": "Tab 2: VIP5 Medium",
+      "description": "Tab 2: Xuc xac xanh VIP5 Medium (2 Dong item)",
+      "box_567x1014": { "x": 336, "y": 196, "w": 65, "h": 70 },
+      "center_567x1014": { "x": 368, "y": 231 },
+      "ratio": { "x": 0.5926, "y": 0.1933, "w": 0.1146, "h": 0.0690 }
+    },
+    "tab_3_vip7_advanced": {
+      "title": "Tab 3: VIP7 Advanced",
+      "description": "Tab 3: Xuc xac vang VIP7 Advanced (3 Dong item)",
+      "box_567x1014": { "x": 412, "y": 196, "w": 65, "h": 70 },
+      "center_567x1014": { "x": 444, "y": 231 },
+      "ratio": { "x": 0.7266, "y": 0.1933, "w": 0.1146, "h": 0.0690 }
+    },
+    "tab_4_vip9_superior": {
+      "title": "Tab 4: VIP9 Superior",
+      "description": "Tab 4: Xuc xac do VIP9 Superior (4 Dong item)",
+      "box_567x1014": { "x": 486, "y": 196, "w": 65, "h": 70 },
+      "center_567x1014": { "x": 518, "y": 231 },
+      "ratio": { "x": 0.8571, "y": 0.1933, "w": 0.1146, "h": 0.0690 }
+    },
+    "btn_odd": {
+      "title": "Button: ODD",
+      "description": "Nut tron xanh ODD (Le)",
+      "box_567x1014": { "x": 450, "y": 286, "w": 92, "h": 92 },
+      "center_567x1014": { "x": 496, "y": 332 },
+      "ratio": { "x": 0.7936, "y": 0.2820, "w": 0.1623, "h": 0.0907 }
+    },
+    "btn_even": {
+      "title": "Button: EVEN",
+      "description": "Nut tron cam EVEN (Chan)",
+      "box_567x1014": { "x": 450, "y": 382, "w": 92, "h": 92 },
+      "center_567x1014": { "x": 496, "y": 428 },
+      "ratio": { "x": 0.7936, "y": 0.3767, "w": 0.1623, "h": 0.0907 }
+    },
+    "btn_refresh_diamond": {
+      "title": "Button: Refresh (Reset)",
+      "description": "Nut Refresh 140 Kim Cuong",
+      "box_567x1014": { "x": 5, "y": 213, "w": 135, "h": 46 },
+      "center_567x1014": { "x": 72, "y": 236 },
+      "ratio": { "x": 0.0088, "y": 0.2101, "w": 0.2381, "h": 0.0454 }
+    },
+    "vip5_row_1": {
+      "title": "VIP5 - Dong 1",
+      "description": "Toan bo Dong 1 trong VIP5",
+      "box_567x1014": { "x": 5, "y": 593, "w": 557, "h": 128 },
+      "center_567x1014": { "x": 283, "y": 657 },
+      "ratio": { "x": 0.0088, "y": 0.5848, "w": 0.9824, "h": 0.1262 }
+    },
+    "vip5_row_1_input": {
+      "title": "R1: Linh Hon Saiyan",
+      "description": "Vat pham dau vao Dong 1 (Cost 80)",
+      "box_567x1014": { "x": 44, "y": 605, "w": 85, "h": 85 },
+      "center_567x1014": { "x": 86, "y": 647 },
+      "ratio": { "x": 0.0776, "y": 0.5966, "w": 0.1499, "h": 0.0838 }
+    },
+    "vip5_row_1_reward": {
+      "title": "R1: ChiChi 5*",
+      "description": "Phan thuong Dong 1",
+      "box_567x1014": { "x": 457, "y": 605, "w": 85, "h": 85 },
+      "center_567x1014": { "x": 499, "y": 647 },
+      "ratio": { "x": 0.8060, "y": 0.5966, "w": 0.1499, "h": 0.0838 }
+    },
+    "vip5_row_2": {
+      "title": "VIP5 - Dong 2",
+      "description": "Toan bo Dong 2 trong VIP5",
+      "box_567x1014": { "x": 5, "y": 732, "w": 557, "h": 128 },
+      "center_567x1014": { "x": 283, "y": 796 },
+      "ratio": { "x": 0.0088, "y": 0.7219, "w": 0.9824, "h": 0.1262 }
+    },
+    "vip5_row_2_input": {
+      "title": "R2: Karin-Sama",
+      "description": "Vat pham dau vao Dong 2 (Cost 1)",
+      "box_567x1014": { "x": 44, "y": 744, "w": 85, "h": 85 },
+      "center_567x1014": { "x": 86, "y": 786 },
+      "ratio": { "x": 0.0776, "y": 0.7337, "w": 0.1499, "h": 0.0838 }
+    },
+    "vip5_row_2_reward": {
+      "title": "R2: Xu (Gold)",
+      "description": "Phan thuong Dong 2 (20k - 40k Xu)",
+      "box_567x1014": { "x": 457, "y": 744, "w": 85, "h": 85 },
+      "center_567x1014": { "x": 499, "y": 786 },
+      "ratio": { "x": 0.8060, "y": 0.7337, "w": 0.1499, "h": 0.0838 }
+    }
+  }
+}

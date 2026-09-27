@@ -1,0 +1,217 @@
+"""
+Cấu hình hệ thống bot tự động hoá game trên MuMu Player / LDPlayer.
+"""
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+BASE_DIR = Path(__file__).resolve().parent
+IMAGES_DIR = BASE_DIR / "images"
+DEBUG_DIR = BASE_DIR / "debug_dumps"
+LOGS_DIR = BASE_DIR / "logs"
+
+IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+LOGS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+@dataclass
+class Rect:
+    """Đại diện cho 1 vùng chữ nhật (x, y, width, height)"""
+    x: int
+    y: int
+    w: int
+    h: int
+
+    @property
+    def x2(self) -> int:
+        return self.x + self.w
+
+    @property
+    def y2(self) -> int:
+        return self.y + self.h
+
+    @property
+    def center(self) -> Tuple[int, int]:
+        return self.x + self.w // 2, self.y + self.h // 2
+
+    def as_tuple(self) -> Tuple[int, int, int, int]:
+        return self.x, self.y, self.w, self.h
+
+
+@dataclass
+class BotConfig:
+    # Cấu hình thiết bị ADB (MuMu Player: 16384/7555, LDPlayer: 5555)
+    adb_host: str = "127.0.0.1"
+    adb_port: int = 16384
+    device_serial: Optional[str] = None
+    
+    # Độ phân giải cố định (Logic trong Android: W x H)
+    target_width: int = 1080
+    target_height: int = 1920
+
+    # Cấu hình capture
+    scrcpy_max_fps: int = 30
+    scrcpy_bitrate: int = 8000000
+    
+    # Template matching thresholds (Kim Cương >= 0.80 theo yêu cầu)
+    default_threshold: float = 0.80
+    diamond_threshold: float = 0.80  # Ngưỡng nhận diện Kim Cương >= 0.80
+    button_threshold: float = 0.78
+    rut_lui_threshold: float = 0.72  # Ngưỡng nhận diện nút Rút lui (kèm ROI chống nhận diện nhầm)
+    ok_threshold: float = 0.72
+
+    # Chiến lược chọn Even/Odd (Mặc định chọn CHẴN)
+    even_odd_strategy: str = "even"
+
+    # Số lần nhận quà tối đa cho mỗi dòng item
+    vip7_rounds_per_row: int = 2  # VIP7 tối đa 2 lần
+    vip9_rounds_per_row: int = 3  # VIP9 tối đa 3 lần
+
+    # Số lần thử lại tối đa
+    max_retries_per_step: int = 4
+    retry_interval_sec: float = 0.3
+
+    # Thời gian chờ phản hồi API & Animation mạng lag (giây)
+    api_loading_timeout: float = 15.0   # Chờ API xúc xắc + mở quà tối đa 15s (sẽ click ngay lập tức khi xuất hiện)
+    reset_api_timeout: float = 8.0      # Chờ API Reset tối đa 8s
+    wait_after_tap: float = 0.25
+    wait_after_vip_open: float = 0.6
+    wait_after_even_odd: float = 0.5
+    wait_after_rut_lui: float = 0.4
+    wait_after_reset: float = 1.0
+    wait_after_scroll: float = 0.5
+
+    # Độ lệch pixel ngẫu nhiên khi tap
+    tap_jitter_px: int = 4
+
+    # Đường dẫn template ảnh mẫu
+    templates: Dict[str, Path] = field(default_factory=lambda: {
+        "kim_cuong": IMAGES_DIR / "kim_cuong_icon.png",
+        "kim_cuong_inner": IMAGES_DIR / "kim_cuong_inner.png",
+        "vip7_tab": IMAGES_DIR / "vip7_tab.png",
+        "vip9_tab": IMAGES_DIR / "vip9_tab.png",
+        "even_btn": IMAGES_DIR / "even_button.png",
+        "odd_btn": IMAGES_DIR / "odd_button.png",
+        "rut_lui_btn": IMAGES_DIR / "rut_lui_button.png",
+        "ok_btn": IMAGES_DIR / "ok_button.png",
+        "arale_header": IMAGES_DIR / "arale_header.png",
+        "no_turns_text": IMAGES_DIR / "no_turns_text.png",
+        "out_of_items_text": IMAGES_DIR / "out_of_items_text.png",
+        "warrior_gem_text": IMAGES_DIR / "warrior_gem_text.png",
+        "reset_btn": IMAGES_DIR / "reset_button.png",
+    })
+
+    # Toạ độ 3 dòng VIP7
+    vip7_rows_ratio: List[Tuple[float, float, float, float]] = field(default_factory=lambda: [
+        (0.0088, 0.5848, 0.9824, 0.1262),  # Dòng 1 VIP7
+        (0.0088, 0.7219, 0.9824, 0.1262),  # Dòng 2 VIP7
+        (0.0088, 0.8599, 0.9824, 0.1000),  # Dòng 3 VIP7
+    ])
+
+    # Toạ độ 3 dòng VIP9 ban đầu (Dòng 1, 2, 3 - không cần cuộn)
+    vip9_initial_rows_ratio: List[Tuple[float, float, float, float]] = field(default_factory=lambda: [
+        (0.0088, 0.5848, 0.9824, 0.1262),  # Dòng 1 VIP9 (Top)
+        (0.0088, 0.7219, 0.9824, 0.1262),  # Dòng 2 VIP9 (Mid)
+        (0.0088, 0.8150, 0.9824, 0.1262),  # Dòng 3 VIP9 (Bot - chưa cuộn)
+    ])
+
+    # Toạ độ duy nhất cho DÒNG 4 VIP9 sau khi cuộn lên (nhích cao lên: y/H = 0.8150)
+    vip9_scrolled_rows_ratio: List[Tuple[float, float, float, float]] = field(default_factory=lambda: [
+        (0.0088, 0.8150, 0.9824, 0.1262),  # Duy nhất Dòng 4 VIP9 sau khi cuộn
+    ])
+
+    # Toạ độ vuốt cuộn nằm hoàn toàn bên trong khung khay item (Y từ 62% đến 90% màn hình)
+    # Swipe UP: Chạm tại 90% kéo lên 62%
+    # Swipe DOWN: Chạm tại 62% kéo xuống 90%
+    swipe_vip9_start_ratio: Tuple[float, float] = (0.50, 0.90)
+    swipe_vip9_end_ratio: Tuple[float, float] = (0.50, 0.62)
+
+    @property
+    def vip7_rows(self) -> List[Rect]:
+        return [
+            Rect(
+                x=int(r[0] * self.target_width),
+                y=int(r[1] * self.target_height),
+                w=int(r[2] * self.target_width),
+                h=int(r[3] * self.target_height),
+            )
+            for r in self.vip7_rows_ratio
+        ]
+
+    @property
+    def vip9_initial_rows(self) -> List[Rect]:
+        return [
+            Rect(
+                x=int(r[0] * self.target_width),
+                y=int(r[1] * self.target_height),
+                w=int(r[2] * self.target_width),
+                h=int(r[3] * self.target_height),
+            )
+            for r in self.vip9_initial_rows_ratio
+        ]
+
+    @property
+    def vip9_scrolled_rows(self) -> List[Rect]:
+        """Danh sách chứa duy nhất Dòng 4 của VIP9 sau khi cuộn lên."""
+        return [
+            Rect(
+                x=int(r[0] * self.target_width),
+                y=int(r[1] * self.target_height),
+                w=int(r[2] * self.target_width),
+                h=int(r[3] * self.target_height),
+            )
+            for r in self.vip9_scrolled_rows_ratio
+        ]
+
+    # Toạ độ click trực tiếp dự phòng
+    @property
+    def vip7_tab_pos(self) -> Tuple[int, int]:
+        return int(0.785 * self.target_width), int(0.228 * self.target_height)
+
+    @property
+    def vip9_tab_pos(self) -> Tuple[int, int]:
+        return int(0.913 * self.target_width), int(0.228 * self.target_height)
+
+    @property
+    def even_btn_pos(self) -> Tuple[int, int]:
+        return int(0.871 * self.target_width), int(0.420 * self.target_height)
+
+    @property
+    def odd_btn_pos(self) -> Tuple[int, int]:
+        return int(0.871 * self.target_width), int(0.327 * self.target_height)
+
+    @property
+    def rut_lui_roi(self) -> Rect:
+        """Vùng xuất hiện nút Rút lui (ở giữa màn hình dọc theo trục Y từ 50% đến 75%)."""
+        return Rect(
+            x=int(0.15 * self.target_width),
+            y=int(0.50 * self.target_height),
+            w=int(0.70 * self.target_width),
+            h=int(0.25 * self.target_height)
+        )
+
+    @property
+    def ok_roi(self) -> Rect:
+        """Vùng xuất hiện nút OK (ở nửa dưới màn hình dọc theo trục Y từ 65% đến 96%)."""
+        return Rect(
+            x=int(0.15 * self.target_width),
+            y=int(0.65 * self.target_height),
+            w=int(0.70 * self.target_width),
+            h=int(0.30 * self.target_height)
+        )
+
+    @property
+    def rut_lui_btn_pos(self) -> Tuple[int, int]:
+        return int(0.500 * self.target_width), int(0.630 * self.target_height)  # (540, 1210)
+
+    @property
+    def ok_btn_pos(self) -> Tuple[int, int]:
+        return int(0.500 * self.target_width), int(0.880 * self.target_height)
+
+    @property
+    def reset_btn_pos(self) -> Tuple[int, int]:
+        return int(0.127 * self.target_width), int(0.232 * self.target_height)
+
+
+config = BotConfig()
