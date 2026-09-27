@@ -34,6 +34,7 @@ class GameBot:
         self.vision = VisionEngine(self.cfg.templates)
         self.cycle_count = 0
         self.success_count = 0
+        self.current_vip = "vip7"  # Bắt đầu vòng đầu tiên từ VIP7, các vòng sau sẽ đảo chiều thông minh
 
     def start(self):
         """Khởi động hệ thống capture và nạp template."""
@@ -223,58 +224,15 @@ class GameBot:
         """Kiểm tra và tự động bấm nút OK / Rút lui nếu có bất kỳ popup nào đang kẹt."""
         return self.wait_and_dismiss_all_popups(max_wait_sec=1.5)
 
-    def _tap_template_or_fallback(
-        self,
-        template_key: str,
-        fallback_pos: Tuple[int, int],
-        threshold: float = 0.75,
-        roi: Optional[Rect] = None,
-        label: str = "Action"
-    ) -> bool:
-        """Tìm template để tap, nếu không thấy thì dùng toạ độ fallback."""
-        frame = self._wait_for_frame()
-        match = self.vision.find_template(
-            frame=frame,
-            template_key_or_path=template_key,
-            threshold=threshold,
-            roi=roi
-        )
-
-        if match.found:
-            cx, cy = match.center
-            logger.info(f"[{label}] Tìm thấy '{template_key}' (conf: {match.confidence:.2f}) tại ({cx}, {cy})")
-            self._tap(cx, cy, label=label)
-            return True
-        else:
-            fx, fy = fallback_pos
-            logger.info(f"[{label}] Dùng toạ độ fallback ({fx}, {fy})")
-            self._tap(fx, fy, label=label)
-            return True
-
     # ==================== CÁC STATE CHI TIẾT ====================
 
-    def enter_vip_section(self, vip_type: str = "vip7", timeout: float = 6.0) -> bool:
-        """Chuyển vào Tab 3 (VIP7) hoặc Tab 4 (VIP9) sau khi xác nhận màn hình đã sẵn sàng."""
+    def enter_vip_section(self, vip_type: str = "vip7") -> bool:
+        """Chuyển vào Tab 3 (VIP7) hoặc Tab 4 (VIP9) bằng toạ độ cố định chuẩn xác."""
         logger.info(f"=== [STATE] Vào Tab {vip_type.upper()} ===")
         self.dismiss_popup_if_present()
-        template_key = f"{vip_type}_tab"
-        fallback_pos = self.cfg.vip7_tab_pos if vip_type == "vip7" else self.cfg.vip9_tab_pos
-
-        match = self.wait_for_template(
-            template_key=template_key,
-            threshold=self.cfg.button_threshold,
-            timeout=timeout,
-            label=f"Tab {vip_type.upper()}"
-        )
-        if match:
-            cx, cy = match.center
-            self._tap(cx, cy, label=f"Click Tab {vip_type.upper()}")
-        else:
-            fx, fy = fallback_pos
-            logger.warning(f"⚠️ Không nhận diện được '{template_key}' trên màn hình -> Sử dụng toạ độ chuẩn ({fx}, {fy})")
-            self._tap(fx, fy, label=f"Click Tab {vip_type.upper()} (Fixed Pos)")
-
-        time.sleep(0.3)
+        pos = self.cfg.vip7_tab_pos if vip_type == "vip7" else self.cfg.vip9_tab_pos
+        self._tap(pos[0], pos[1], label=f"Click Tab {vip_type.upper()}")
+        time.sleep(self.cfg.wait_after_vip_open)
         return True
 
     def choose_even_odd(self, timeout: float = 8.0) -> bool:
@@ -566,91 +524,71 @@ class GameBot:
     def reset_cycle(self) -> bool:
         """
         Bấm Refresh/Reset để làm mới vòng lặp.
-        Chờ liên tục cho đến khi nút Reset xuất hiện -> bấm Reset.
-        Sau đó chờ liên tục cho đến khi popup xác nhận (nút OK / Warrior Gem) xuất hiện -> bấm OK và đóng sạch.
-        Không giới hạn số lần hay đếm giây cố định, ra nút lúc nào bấm lúc đó.
+        - Chờ nút Reset xuất hiện trên màn hình -> Bấm Reset.
+        - Chờ ngắn để game gửi API và làm mới danh sách item.
+        - Dọn dẹp popup nếu có thông báo đột xuất (ví dụ Warrior Gem) rồi tiếp tục ngay!
         """
         logger.info("=== [STATE] Bấm Reset (Refresh) ===")
         self.dismiss_popup_if_present()
 
-        # 1. Chờ liên tục cho đến khi nút Reset xuất hiện trên màn hình
+        # 1. Chờ nút Reset xuất hiện trên màn hình
         logger.info("⏳ Chờ nút Reset xuất hiện trên màn hình...")
-        reset_match = None
-        while reset_match is None:
-            reset_match = self.wait_for_template(
-                template_key="reset_btn",
-                threshold=self.cfg.button_threshold,
-                timeout=2.0,
-                label="Nút Reset (Refresh)"
-            )
-            if reset_match is None:
-                # Nếu có popup nào đang che khuất nút Reset thì dọn dẹp
-                self.dismiss_popup_if_present()
+        reset_match = self.wait_for_template(
+            template_key="reset_btn",
+            threshold=self.cfg.button_threshold,
+            timeout=3.0,
+            label="Nút Reset (Refresh)"
+        )
+        if reset_match:
+            cx, cy = reset_match.center
+        else:
+            cx, cy = self.cfg.reset_btn_pos
 
-        cx, cy = reset_match.center
         logger.info(f"🔄 Bấm nút Reset tại ({cx}, {cy})")
         self._tap(cx, cy, label="Reset Cycle")
 
-        # 2. Chờ liên tục cho đến khi nút OK xác nhận xuất hiện trên màn hình
-        logger.info("⏳ Đang theo dõi màn hình chờ nút OK xác nhận Reset xuất hiện...")
-        t_wait_start = time.perf_counter()
-        while True:
-            try:
-                frame = self._wait_for_frame()
-            except Exception:
-                time.sleep(0.06)
-                continue
+        # 2. Chờ game cập nhật mạng và làm mới danh sách item
+        time.sleep(self.cfg.wait_after_reset)
 
-            # Kiểm tra nếu xuất hiện nút OK
-            match_ok = self.vision.find_template(
-                frame, "ok_btn", threshold=self.cfg.ok_threshold, roi=self.cfg.ok_roi
-            )
-            if match_ok.found:
-                ok_cx, ok_cy = match_ok.center
-                p_type = self.classify_ok_popup(frame)
-                popup_label = "Warrior Gem" if p_type == "WARRIOR_GEM" else "Xác nhận Reset"
-                logger.info(f"🔔 [Popup {popup_label}] Đã xuất hiện nút OK tại ({ok_cx}, {ok_cy}) -> Bấm OK!")
-                self._tap(ok_cx, ok_cy, label=f"Click OK ({popup_label})")
-                self._confirm_button_closed("ok_btn", self.cfg.ok_threshold, self.cfg.ok_roi, (ok_cx, ok_cy))
-                break
-
-            # Nếu game đã làm mới xong trực tiếp và hiển thị lại Tab VIP
-            if time.perf_counter() - t_wait_start > 3.0:
-                match_vip7 = self.vision.find_template(frame, "vip7_tab", threshold=self.cfg.button_threshold)
-                if match_vip7.found:
-                    logger.info("✅ Giao diện đã tự động làm mới về màn hình VIP.")
-                    break
-
-            time.sleep(0.06)
-
-        # 3. Đảm bảo dọn sạch mọi popup còn sót
+        # 3. Dọn dẹp nếu có popup đột xuất
         self.dismiss_popup_if_present()
-        logger.info("✅ Hoàn tất quá trình Reset.")
+        logger.info("✅ Đã làm mới (Reset) xong chu kỳ!")
         return True
 
     # ==================== ĐIỀU PHỐI VÒNG LẶP ====================
 
     def run_one_cycle(self) -> bool:
-        """Chạy 1 chu kỳ hoàn chỉnh."""
+        """
+        Chạy 1 chu kỳ hoàn chỉnh theo cơ chế Đảo chiều thông minh (Alternating Loop):
+        - Nếu đang ở VIP7: VIP7 -> VIP9 -> Reset -> (Ở lại VIP9)
+        - Nếu đang ở VIP9: VIP9 -> VIP7 -> Reset -> (Ở lại VIP7)
+        Tiết kiệm tối đa thao tác chuyển tab.
+        """
         self.cycle_count += 1
         cycle_start = time.perf_counter()
-        logger.info(f"\n==================== BẮT ĐẦU VÒNG #{self.cycle_count} ====================")
+        logger.info(f"\n==================== BẮT ĐẦU VÒNG #{self.cycle_count} (Bắt đầu từ {self.current_vip.upper()}) ====================")
 
         # 0. Tự động đóng popup nếu có từ trước
         self.dismiss_popup_if_present()
 
-        # 1. VIP7 Flow (Tự quét và chơi tất cả dòng Kim Cương, nếu hết nguyên liệu tự sang dòng khác)
-        self.process_vip_section("vip7")
-
-        # 2. VIP9 Flow (Tự quét, cuộn và chơi tất cả dòng Kim Cương)
-        self.process_vip_section("vip9")
-
-        # 3. Reset Flow
-        self.reset_cycle()
+        if self.current_vip == "vip7":
+            # Flow: VIP7 -> VIP9 -> Reset
+            self.process_vip_section("vip7")
+            self.process_vip_section("vip9")
+            self.reset_cycle()
+            # Sau khi Reset ở VIP9, vòng tiếp theo sẽ ở luôn VIP9 chơi trước!
+            self.current_vip = "vip9"
+        else:
+            # Flow: VIP9 -> VIP7 -> Reset
+            self.process_vip_section("vip9")
+            self.process_vip_section("vip7")
+            self.reset_cycle()
+            # Sau khi Reset ở VIP7, vòng tiếp theo sẽ ở luôn VIP7 chơi trước!
+            self.current_vip = "vip7"
 
         total_time_sec = time.perf_counter() - cycle_start
         self.success_count += 1
-        logger.info(f"✅ Hoàn thành vòng #{self.cycle_count} trong {total_time_sec:.2f}s!")
+        logger.info(f"✅ Hoàn thành vòng #{self.cycle_count} trong {total_time_sec:.2f}s! (Vòng kế tiếp sẽ bắt đầu từ: {self.current_vip.upper()})")
         return True
 
     def run_forever(self):
