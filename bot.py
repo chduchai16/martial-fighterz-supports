@@ -63,10 +63,9 @@ class GameBot:
         return frame
 
     def _tap(self, x: int, y: int, label: str = "Tap"):
-        """Gửi lệnh tap vào toạ độ (x, y)."""
+        """Gửi lệnh tap vào toạ độ (x, y) tức thì qua Persistent Shell."""
         logger.info(f"[{label}] -> Tap tại điểm ({x}, {y})")
         self.capture.tap(x, y, jitter_px=self.cfg.tap_jitter_px)
-        time.sleep(self.cfg.wait_after_tap)
 
     def _swipe_vip9_up(self):
         """Vuốt cuộn khay item VIP9 lên để lộ Dòng 4."""
@@ -76,20 +75,17 @@ class GameBot:
         x2 = int(self.cfg.swipe_vip9_end_ratio[0] * w)
         y2 = int(self.cfg.swipe_vip9_end_ratio[1] * h)
         logger.info(f"[VIP9] Đang cuộn khay item lên: từ ({x1}, {y1}) -> ({x2}, {y2})...")
-        self.capture.swipe(x1, y1, x2, y2, duration=0.35)
-        time.sleep(self.cfg.wait_after_scroll)
+        self.capture.swipe(x1, y1, x2, y2, duration=0.2)
 
     def _swipe_vip9_down(self):
         """Vuốt cuộn khay item VIP9 xuống để trở về vị trí đầu, hiện full Dòng 1."""
         w, h = self.cfg.target_width, self.cfg.target_height
-        # Vuốt ngược lại từ trên xuống dưới
         x1 = int(self.cfg.swipe_vip9_end_ratio[0] * w)
         y1 = int(self.cfg.swipe_vip9_end_ratio[1] * h)
         x2 = int(self.cfg.swipe_vip9_start_ratio[0] * w)
         y2 = int(self.cfg.swipe_vip9_start_ratio[1] * h)
         logger.info(f"[VIP9] Đang cuộn khay item xuống lại đầu trang: từ ({x1}, {y1}) -> ({x2}, {y2})...")
-        self.capture.swipe(x1, y1, x2, y2, duration=0.35)
-        time.sleep(self.cfg.wait_after_scroll)
+        self.capture.swipe(x1, y1, x2, y2, duration=0.2)
 
     def classify_ok_popup(self, frame: np.ndarray) -> str:
         """
@@ -232,7 +228,6 @@ class GameBot:
         pos = self.cfg.vip7_tab_pos if vip_type == "vip7" else self.cfg.vip9_tab_pos
         # Bấm Tab ngay lập tức qua Persistent Shell (<5ms)
         self._tap(pos[0], pos[1], label=f"Click Tab {vip_type.upper()}")
-        time.sleep(self.cfg.wait_after_vip_open)
         return True
 
     def choose_even_odd(self, timeout: float = 8.0) -> bool:
@@ -439,8 +434,6 @@ class GameBot:
                     cx, cy = target_row.center
                     logger.info(f"💎 [VIP7] Phát hiện Kim Cương ở DÒNG #{actual_idx + 1} (conf: {best_match.confidence:.3f} >= {self.cfg.diamond_threshold:.2f}). Click tại ({cx}, {cy})")
                     self._tap(cx, cy, label=f"Click Center Row #{actual_idx+1}")
-                    time.sleep(0.4)
-
                     self.play_diamond_row(max_rounds, vip_name="VIP7")
                 else:
                     logger.info(f"[VIP7] Không còn dòng Kim Cương nào chưa chơi (ngưỡng >= {self.cfg.diamond_threshold:.2f}). Chuyển sang VIP9.")
@@ -474,8 +467,6 @@ class GameBot:
                     cx, cy = target_row.center
                     logger.info(f"💎 [VIP9] Phát hiện Kim Cương ở DÒNG #{actual_idx + 1} (conf: {best_match.confidence:.3f} >= {self.cfg.diamond_threshold:.2f}). Click tại ({cx}, {cy})")
                     self._tap(cx, cy, label=f"Click Center Row #{actual_idx+1}")
-                    time.sleep(0.4)
-
                     self.play_diamond_row(max_rounds, vip_name="VIP9")
                 else:
                     logger.info(f"[VIP9] Không còn dòng Kim Cương nào ở các dòng đầu (ngưỡng >= {self.cfg.diamond_threshold:.2f}).")
@@ -512,7 +503,6 @@ class GameBot:
                 cx, cy = target_row.center
                 logger.info(f"💎 [VIP9] Phát hiện Kim Cương ở DÒNG 4 (conf: {best_match.confidence:.3f} >= {self.cfg.diamond_threshold:.2f}). Click tại ({cx}, {cy})")
                 self._tap(cx, cy, label="Click Row 4")
-                time.sleep(0.4)
                 self.play_diamond_row(max_rounds, vip_name="VIP9")
             else:
                 logger.info("[VIP9] Không có Kim Cương ở Dòng 4.")
@@ -525,7 +515,6 @@ class GameBot:
         """
         Bấm Refresh/Reset để làm mới vòng lặp.
         - Chờ nút Reset xuất hiện trên màn hình -> Bấm Reset.
-        - Chờ ngắn để game gửi API và làm mới danh sách item.
         - Dọn dẹp popup nếu có thông báo đột xuất (ví dụ Warrior Gem) rồi tiếp tục ngay!
         """
         logger.info("=== [STATE] Bấm Reset (Refresh) ===")
@@ -547,10 +536,7 @@ class GameBot:
         logger.info(f"🔄 Bấm nút Reset tại ({cx}, {cy})")
         self._tap(cx, cy, label="Reset Cycle")
 
-        # 2. Chờ game cập nhật mạng và làm mới danh sách item
-        time.sleep(self.cfg.wait_after_reset)
-
-        # 3. Dọn dẹp nếu có popup đột xuất
+        # 2. Dọn dẹp nếu có popup đột xuất
         self.dismiss_popup_if_present()
         logger.info("✅ Đã làm mới (Reset) xong chu kỳ!")
         return True
