@@ -142,6 +142,30 @@ class VisionEngine:
 
         return best_res
 
+    def check_row_for_diamond(
+        self,
+        frame: np.ndarray,
+        row_roi: Rect,
+        min_threshold: float = 0.80
+    ) -> MatchResult:
+        """
+        Kiểm tra một dòng cụ thể xem có chứa Kim Cương hay không.
+        So khớp với cả mẫu 'kim_cuong_inner' và 'kim_cuong' để đạt điểm nhận diện cao nhất.
+        """
+        best_match = MatchResult(found=False, confidence=0.0)
+        for t_key in ["kim_cuong_inner", "kim_cuong"]:
+            match = self.find_template(
+                frame=frame,
+                template_key_or_path=t_key,
+                threshold=0.0,
+                roi=row_roi
+            )
+            if match.confidence > best_match.confidence:
+                best_match = match
+
+        best_match.found = (best_match.confidence >= min_threshold)
+        return best_match
+
     def find_best_matching_row(
         self,
         frame: np.ndarray,

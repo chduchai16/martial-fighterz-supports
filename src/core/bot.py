@@ -410,66 +410,47 @@ class GameBot:
             self.enter_vip_section("vip7")
             rows = self.cfg.vip7_rows
 
-            while True:
-                available_rows = [r for i, r in enumerate(rows) if i not in processed_rows]
-                if not available_rows:
-                    logger.info("[VIP7] Đã kiểm tra hết tất cả các dòng của VIP7.")
-                    break
-
+            for idx, target_row in enumerate(rows):
                 self.dismiss_popup_if_present()
                 frame = self._wait_for_frame()
-                best_idx, best_match, _ = self.vision.find_best_matching_row(
+                match = self.vision.check_row_for_diamond(
                     frame=frame,
-                    template_key_or_path="kim_cuong",
-                    rows=available_rows,
+                    row_roi=target_row,
                     min_threshold=self.cfg.diamond_threshold
                 )
 
-                if best_idx is not None and best_match is not None:
-                    actual_idx = [i for i in range(len(rows)) if i not in processed_rows][best_idx]
-                    processed_rows.add(actual_idx)
-
-                    target_row = rows[actual_idx]
+                if match.found:
                     cx, cy = target_row.center
-                    logger.info(f"💎 [VIP7] Phát hiện Kim Cương ở DÒNG #{actual_idx + 1} (conf: {best_match.confidence:.3f} >= {self.cfg.diamond_threshold:.2f}). Click tại ({cx}, {cy})")
-                    self._tap(cx, cy, label=f"Click Center Row #{actual_idx+1}")
+                    logger.info(f"💎 [VIP7] Phát hiện Kim Cương ở DÒNG #{idx + 1} (conf: {match.confidence:.3f} >= {self.cfg.diamond_threshold:.2f}). Bấm tại ({cx}, {cy})")
+                    self._tap(cx, cy, label=f"Click Center Row #{idx + 1}")
                     self.play_diamond_row(max_rounds, vip_name="VIP7")
                 else:
-                    logger.info(f"[VIP7] Không còn dòng Kim Cương nào chưa chơi (ngưỡng >= {self.cfg.diamond_threshold:.2f}). Chuyển sang VIP9.")
-                    break
+                    logger.info(f"[VIP7] Dòng #{idx + 1} không có Kim Cương (conf: {match.confidence:.3f} < {self.cfg.diamond_threshold:.2f}). Bỏ qua.")
+
+            logger.info("[VIP7] Đã kiểm tra xong lần lượt tất cả các dòng của VIP7. Chuyển sang VIP9.")
 
         else:
             # 1. Chuyển vào Tab VIP9 1 lần duy nhất từ VIP7
             self.enter_vip_section("vip9")
             initial_rows = self.cfg.vip9_initial_rows
 
-            # Quét tất cả các dòng ban đầu (1, 2, 3)
-            while True:
-                available_rows = [r for i, r in enumerate(initial_rows) if i not in processed_rows]
-                if not available_rows:
-                    break
-
+            # Quét lần lượt từ trên xuống dưới các dòng ban đầu (Dòng 1 -> Dòng 2 -> Dòng 3)
+            for idx, target_row in enumerate(initial_rows):
                 self.dismiss_popup_if_present()
                 frame = self._wait_for_frame()
-                best_idx, best_match, _ = self.vision.find_best_matching_row(
+                match = self.vision.check_row_for_diamond(
                     frame=frame,
-                    template_key_or_path="kim_cuong",
-                    rows=available_rows,
+                    row_roi=target_row,
                     min_threshold=self.cfg.diamond_threshold
                 )
 
-                if best_idx is not None and best_match is not None:
-                    actual_idx = [i for i in range(len(initial_rows)) if i not in processed_rows][best_idx]
-                    processed_rows.add(actual_idx)
-
-                    target_row = initial_rows[actual_idx]
+                if match.found:
                     cx, cy = target_row.center
-                    logger.info(f"💎 [VIP9] Phát hiện Kim Cương ở DÒNG #{actual_idx + 1} (conf: {best_match.confidence:.3f} >= {self.cfg.diamond_threshold:.2f}). Click tại ({cx}, {cy})")
-                    self._tap(cx, cy, label=f"Click Center Row #{actual_idx+1}")
+                    logger.info(f"💎 [VIP9] Phát hiện Kim Cương ở DÒNG #{idx + 1} (conf: {match.confidence:.3f} >= {self.cfg.diamond_threshold:.2f}). Bấm tại ({cx}, {cy})")
+                    self._tap(cx, cy, label=f"Click Center Row #{idx + 1}")
                     self.play_diamond_row(max_rounds, vip_name="VIP9")
                 else:
-                    logger.info(f"[VIP9] Không còn dòng Kim Cương nào ở các dòng đầu (ngưỡng >= {self.cfg.diamond_threshold:.2f}).")
-                    break
+                    logger.info(f"[VIP9] Dòng #{idx + 1} không có Kim Cương (conf: {match.confidence:.3f} < {self.cfg.diamond_threshold:.2f}). Bỏ qua.")
 
             # 2. Kiểm tra tiếp Dòng 4 của VIP9 (đang ở sẵn VIP9, chỉ cần vuốt cuộn lên)
             logger.info("[VIP9] Cuộn khay item lên để kiểm tra Dòng 4...")
@@ -490,21 +471,21 @@ class GameBot:
             except Exception as e:
                 logger.debug(f"Lỗi lưu ảnh debug line_4: {e}")
 
-            best_idx, best_match, _ = self.vision.find_best_matching_row(
-                frame=frame,
-                template_key_or_path="kim_cuong",
-                rows=scrolled_rows,
-                min_threshold=self.cfg.diamond_threshold
-            )
+            if scrolled_rows:
+                r4 = scrolled_rows[0]
+                match_r4 = self.vision.check_row_for_diamond(
+                    frame=frame,
+                    row_roi=r4,
+                    min_threshold=self.cfg.diamond_threshold
+                )
 
-            if best_idx is not None and best_match is not None:
-                target_row = scrolled_rows[best_idx]
-                cx, cy = target_row.center
-                logger.info(f"💎 [VIP9] Phát hiện Kim Cương ở DÒNG 4 (conf: {best_match.confidence:.3f} >= {self.cfg.diamond_threshold:.2f}). Click tại ({cx}, {cy})")
-                self._tap(cx, cy, label="Click Row 4")
-                self.play_diamond_row(max_rounds, vip_name="VIP9")
-            else:
-                logger.info("[VIP9] Không có Kim Cương ở Dòng 4.")
+                if match_r4.found:
+                    cx, cy = r4.center
+                    logger.info(f"💎 [VIP9] Phát hiện Kim Cương ở DÒNG 4 (conf: {match_r4.confidence:.3f} >= {self.cfg.diamond_threshold:.2f}). Bấm tại ({cx}, {cy})")
+                    self._tap(cx, cy, label="Click Row 4")
+                    self.play_diamond_row(max_rounds, vip_name="VIP9")
+                else:
+                    logger.info(f"[VIP9] Không có Kim Cương ở Dòng 4 (conf: {match_r4.confidence:.3f} < {self.cfg.diamond_threshold:.2f}).")
 
             # Kết thúc Dòng 4 -> Luôn cuộn trả khay item về lại đầu trang với cùng lực kéo đối xứng
             self.dismiss_popup_if_present()
