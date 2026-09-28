@@ -74,15 +74,15 @@ class BotConfig:
     max_retries_per_step: int = 4
     retry_interval_sec: float = 0.3
 
-    # Thời gian chờ phản hồi API & Animation mạng lag (giây)
+    # Thời gian chờ phản hồi tối ưu (giây) - Phản xạ nhanh, không đứng im vô nghĩa
     api_loading_timeout: float = 15.0   # Chờ API xúc xắc + mở quà tối đa 15s (sẽ click ngay lập tức khi xuất hiện)
     reset_api_timeout: float = 8.0      # Chờ API Reset tối đa 8s
-    wait_after_tap: float = 0.25
-    wait_after_vip_open: float = 0.6
-    wait_after_even_odd: float = 0.5
-    wait_after_rut_lui: float = 0.4
-    wait_after_reset: float = 1.0
-    wait_after_scroll: float = 0.5
+    wait_after_tap: float = 0.08        # Giảm từ 0.25s -> 0.08s sau cú tap
+    wait_after_vip_open: float = 0.15   # Giảm từ 0.6s -> 0.15s sau khi bấm Tab VIP
+    wait_after_even_odd: float = 0.15   # Giảm từ 0.5s -> 0.15s sau khi bấm Even/Odd
+    wait_after_rut_lui: float = 0.10    # Giảm từ 0.4s -> 0.10s sau khi bấm Rút lui
+    wait_after_reset: float = 0.50      # Giảm từ 1.0s -> 0.50s sau khi bấm Reset
+    wait_after_scroll: float = 0.25     # Giảm từ 0.5s -> 0.25s sau khi cuộn trang
 
     # Độ lệch pixel ngẫu nhiên khi tap
     tap_jitter_px: int = 4

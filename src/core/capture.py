@@ -59,6 +59,7 @@ class FastCapture:
         self.bitrate = bitrate
         self.adb_bin = find_adb_executable()
         self._running = False
+        self._shell_proc: Optional[subprocess.Popen] = None
 
     def _run_adb(self, args: List[str], timeout: float = 3.0) -> subprocess.CompletedProcess:
         """Chạy lệnh adb an toàn với executable đã xác định."""
@@ -79,6 +80,48 @@ class FastCapture:
             return devices
         except Exception:
             return []
+
+    def _init_persistent_shell(self):
+        """Khởi tạo một tiến trình ADB Shell duy nhất và duy trì xuyên suốt vòng đời bot."""
+        if self._shell_proc is not None and self._shell_proc.poll() is None:
+            return
+
+        cmd = [self.adb_bin]
+        if self.device_serial:
+            cmd.extend(["-s", self.device_serial])
+        cmd.extend(["shell"])
+
+        try:
+            self._shell_proc = subprocess.Popen(
+                cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                bufsize=0  # Không đệm, gửi dữ liệu đi ngay lập tức
+            )
+            logger.info("⚡ Đã kích hoạt kết nối Persistent ADB Shell xuyên suốt (Độ trễ tap < 5ms)!")
+        except Exception as e:
+            logger.warning(f"Không thể mở Persistent Shell ({e}), sẽ fallback về subprocess thường.")
+            self._shell_proc = None
+
+    def _send_shell_cmd(self, command: str):
+        """Gửi lệnh trực tiếp vào pipe của Persistent Shell."""
+        if self._shell_proc is None or self._shell_proc.poll() is not None:
+            self._init_persistent_shell()
+
+        if self._shell_proc and self._shell_proc.stdin:
+            try:
+                line = (command.strip() + "\n").encode("utf-8")
+                self._shell_proc.stdin.write(line)
+                self._shell_proc.stdin.flush()
+                return
+            except Exception as e:
+                logger.debug(f"Lỗi gửi qua Persistent Shell: {e}, đang khởi tạo lại...")
+                self._init_persistent_shell()
+
+        # Fallback an toàn nếu persistent shell bị lỗi
+        args = ["shell"] + command.split()
+        self._run_adb(args, timeout=2.0)
 
     def start(self):
         """Khởi tạo kết nối tới MuMu Player / LDPlayer."""
@@ -110,6 +153,8 @@ class FastCapture:
             logger.error("👉 Hãy đảm bảo MuMu Player đang bật, và kiểm tra tính năng ADB trong Cài đặt MuMu.")
 
         self._running = True
+        # Mở sẵn ống kết nối Persistent Shell ngay từ lúc start
+        self._init_persistent_shell()
 
     def get_latest_frame(self, timeout: float = 3.5) -> Optional[np.ndarray]:
         """Chụp màn hình qua adb exec-out screencap -p."""
@@ -134,7 +179,7 @@ class FastCapture:
         return None
 
     def tap(self, x: int, y: int, jitter_px: int = 4):
-        """Tap tại điểm (x, y) kèm jitter nhẹ."""
+        """Tap tại điểm (x, y) qua Persistent Shell siêu tốc kèm jitter nhẹ."""
         if jitter_px > 0:
             x += random.randint(-jitter_px, jitter_px)
             y += random.randint(-jitter_px, jitter_px)
@@ -142,20 +187,27 @@ class FastCapture:
         x = max(0, x)
         y = max(0, y)
 
-        try:
-            self._run_adb(["shell", "input", "tap", str(x), str(y)], timeout=2.0)
-        except Exception as e:
-            logger.error(f"Lỗi tap: {e}")
+        self._send_shell_cmd(f"input tap {x} {y}")
 
     def swipe(self, x1: int, y1: int, x2: int, y2: int, duration: float = 0.3):
-        """Vuốt cuộn màn hình."""
+        """Vuốt cuộn màn hình qua Persistent Shell."""
         duration_ms = int(duration * 1000)
-        try:
-            self._run_adb(["shell", "input", "swipe", str(x1), str(y1), str(x2), str(y2), str(duration_ms)], timeout=3.0)
-        except Exception as e:
-            logger.error(f"Lỗi swipe: {e}")
+        self._send_shell_cmd(f"input swipe {x1} {y1} {x2} {y2} {duration_ms}")
 
     def stop(self):
-        """Dừng kết nối."""
+        """Dừng kết nối và đóng Persistent Shell."""
         self._running = False
-        logger.info("FastCapture đã dừng.")
+        if self._shell_proc:
+            try:
+                if self._shell_proc.stdin:
+                    self._shell_proc.stdin.write(b"exit\n")
+                    self._shell_proc.stdin.flush()
+                self._shell_proc.terminate()
+                self._shell_proc.wait(timeout=1.0)
+            except Exception:
+                try:
+                    self._shell_proc.kill()
+                except Exception:
+                    pass
+            self._shell_proc = None
+        logger.info("FastCapture đã dừng và đóng Persistent Shell an toàn.")

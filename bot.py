@@ -213,24 +213,24 @@ class GameBot:
                 t_start = time.perf_counter()
                 continue
 
-            # Nếu sau 0.8s quét liên tục mà không thấy popup nào xuất hiện nữa -> màn hình đã sạch
-            if time.perf_counter() - t_start > 0.8:
+            # Nếu không thấy popup nào xuất hiện nữa -> màn hình sạch, thoát ngay không chờ
+            if not dismissed_any:
                 break
-            time.sleep(0.06)
+            time.sleep(0.04)
 
         return dismissed_any
 
-    def dismiss_popup_if_present(self, max_attempts: int = 3) -> bool:
-        """Kiểm tra và tự động bấm nút OK / Rút lui nếu có bất kỳ popup nào đang kẹt."""
-        return self.wait_and_dismiss_all_popups(max_wait_sec=1.5)
+    def dismiss_popup_if_present(self, max_attempts: int = 1) -> bool:
+        """Kiểm tra nhanh xem có popup nào đang kẹt không và bấm đóng ngay (không chờ vô nghĩa)."""
+        return self.wait_and_dismiss_all_popups(max_wait_sec=0.4)
 
     # ==================== CÁC STATE CHI TIẾT ====================
 
     def enter_vip_section(self, vip_type: str = "vip7") -> bool:
-        """Chuyển vào Tab 3 (VIP7) hoặc Tab 4 (VIP9) bằng toạ độ cố định chuẩn xác."""
+        """Chuyển vào Tab 3 (VIP7) hoặc Tab 4 (VIP9) tức thì bằng toạ độ cố định qua Persistent Shell."""
         logger.info(f"=== [STATE] Vào Tab {vip_type.upper()} ===")
-        self.dismiss_popup_if_present()
         pos = self.cfg.vip7_tab_pos if vip_type == "vip7" else self.cfg.vip9_tab_pos
+        # Bấm Tab ngay lập tức qua Persistent Shell (<5ms)
         self._tap(pos[0], pos[1], label=f"Click Tab {vip_type.upper()}")
         time.sleep(self.cfg.wait_after_vip_open)
         return True
