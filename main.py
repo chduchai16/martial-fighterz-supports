@@ -8,8 +8,17 @@ import logging
 import sys
 import time
 
-from bot import GameBot
-from config import LOGS_DIR, config
+from pathlib import Path
+ROOT_DIR = Path(__file__).resolve().parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+try:
+    from src.core.bot import GameBot
+    from src.core.config import LOGS_DIR, config
+except ImportError:
+    from bot import GameBot
+    from config import LOGS_DIR, config
 
 
 def setup_logging(debug: bool = False):

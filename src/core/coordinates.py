@@ -8,10 +8,11 @@ from typing import Dict, Tuple
 
 from config import Rect
 
+ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 COORD_FILE = (
-    Path(__file__).resolve().parent / "assets" / "coordinates.json"
-    if (Path(__file__).resolve().parent / "assets" / "coordinates.json").exists()
-    else Path(__file__).resolve().parent / "coordinates.json"
+    ROOT_DIR / "assets" / "coordinates.json"
+    if (ROOT_DIR / "assets" / "coordinates.json").exists()
+    else ROOT_DIR / "coordinates.json"
 )
 
 

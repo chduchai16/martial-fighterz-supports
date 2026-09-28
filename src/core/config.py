@@ -5,7 +5,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-BASE_DIR = Path(__file__).resolve().parent
+# Thư mục gốc dự án (parent.parent của src/core/config.py)
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 # Ưu tiên thư mục assets/templates nếu có, fallback về images/
 IMAGES_DIR = BASE_DIR / "assets" / "templates" if (BASE_DIR / "assets" / "templates").exists() else BASE_DIR / "images"
 DEBUG_DIR = BASE_DIR / "debug_dumps"

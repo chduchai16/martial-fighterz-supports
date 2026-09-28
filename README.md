@@ -4,33 +4,39 @@ Tool tự động hoá quy trình lặp lại (VIP7 ➔ Kim Cương ➔ Even/Odd
 
 ---
 
-## 📁 Cấu Trúc Dự Án
+## 📁 Cấu Trúc Dự Án Chuẩn Hóa
 
 ```
 martial-fighterz-supports/
 │
-├── config.py              # Cấu hình toạ độ, thresholds, danh sách ROI dòng VIP7/VIP9, timeout
-├── capture.py             # Quản lý FastCapture (scrcpy stream buffer + adb fallback + control tap)
-├── vision.py              # Xử lý Template Matching, quét so sánh các dòng, lưu debug dump
-├── bot.py                 # State Machine điều khiển luồng logic nghiệp vụ
-├── main.py                # Entrypoint CLI chạy bot, test FPS, test từng state
-├── requirements.txt       # Danh sách thư viện Python cần thiết
+├── src/                        # Source code chính của dự án
+│   ├── core/                   # Engine & Logic nghiệp vụ Bot
+│   │   ├── __init__.py         # Core package exports
+│   │   ├── bot.py              # State Machine điều khiển luồng tự động
+│   │   ├── capture.py          # FastCapture (ADB Screencap + Tap/Swipe)
+│   │   ├── vision.py           # VisionEngine (Template matching, quét dòng)
+│   │   ├── config.py           # Cấu hình toạ độ, thresholds, timeout
+│   │   └── coordinates.py      # Quản lý toạ độ co giãn theo tỷ lệ
+│   │
+│   └── ui/                     # Giao diện người dùng
+│       ├── __init__.py         # UI package exports
+│       └── gui_app.py          # Dashboard CustomTkinter (Light/Dark Mode)
 │
-├── tools/
-│   ├── region_picker.py   # Tool giao diện kéo chuột đo toạ độ ROI & crop ảnh template
-│   └── screenshot_tool.py # Chụp ảnh màn hình từ LDPlayer lưu vào images/
+├── assets/                     # Tài nguyên ảnh & dữ liệu toạ độ
+│   ├── templates/              # Ảnh template icon/nút nhận diện (.png)
+│   ├── samples/                # Ảnh chụp mẫu các bước trong game
+│   ├── line_4/                 # Ảnh mẫu kiểm tra dòng 4 VIP9
+│   └── coordinates.json        # Dữ liệu toạ độ các phần tử UI game
 │
-├── images/                # Nơi chứa các ảnh mẫu template (.png)
-│   ├── kim_cuong_icon.png # (Bắt buộc) Icon Kim Cương cần tìm
-│   ├── vip7_tab.png       # Nút/Tab VIP 7
-│   ├── vip9_tab.png       # Nút/Tab VIP 9
-│   ├── even_button.png    # Nút Even (Chẵn)
-│   ├── odd_button.png     # Nút Odd (Lẻ)
-│   ├── claim_button.png   # Nút Claim (Nhận thưởng)
-│   └── reset_button.png   # Nút Reset
+├── tools/                      # Bộ công cụ hỗ trợ phát triển & đo toạ độ
+│   ├── region_picker.py        # Giao diện đo toạ độ & crop template trực quan
+│   ├── screenshot_tool.py      # Chụp nhanh màn hình từ giả lập
+│   └── crop_vip9_line4.py      # Tool kiểm tra chụp 4 dòng VIP9
 │
-├── logs/                  # File log nhật ký hoạt động
-└── debug_dumps/           # Ảnh chụp màn hình khi gặp lỗi hoặc confidence thấp
+├── gui_app.py                  # Entrypoint khởi chạy giao diện Desktop
+├── main.py                     # Entrypoint CLI chạy dòng lệnh & test
+├── requirements.txt            # Thư viện phụ thuộc (OpenCV, CustomTkinter...)
+└── .gitignore                  # Bỏ qua cache, logs và debug dumps
 ```
 
 ---
