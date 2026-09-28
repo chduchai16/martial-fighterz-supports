@@ -110,11 +110,11 @@ class GameBot:
 
         return "EXHAUSTED"
 
-    def _confirm_button_closed(self, template_key: str, threshold: float, roi: Rect, tap_pos: Tuple[int, int], max_wait: float = 4.0) -> bool:
+    def _confirm_button_closed(self, template_key: str, threshold: float, roi: Rect, tap_pos: Tuple[int, int], max_wait: float = 3.0) -> bool:
         """
         ĐẢM BẢO BẤM THÀNH CÔNG:
         Theo dõi màn hình liên tục cho tới khi nút/popup biến mất hoàn toàn.
-        Nếu sau 0.35s nút vẫn còn hiển thị, bấm lại tại toạ độ tap_pos cho tới khi màn hình cập nhật đóng hẳn!
+        Nếu sau 0.25s nút vẫn còn hiển thị, bấm lại tại toạ độ tap_pos cho tới khi màn hình cập nhật đóng hẳn!
         """
         c_start = time.perf_counter()
         last_retry = c_start
@@ -126,14 +126,14 @@ class GameBot:
                     logger.info(f"✅ Nút/Popup '{template_key}' đã đóng hoàn toàn khỏi màn hình.")
                     return True
                 
-                # Nếu quá 0.35s mà nút vẫn còn trên màn hình -> tap lại
-                if time.perf_counter() - last_retry > 0.35:
+                # Nếu quá 0.25s mà nút vẫn còn trên màn hình -> tap lại
+                if time.perf_counter() - last_retry > 0.25:
                     logger.info(f"🔄 Nút/Popup '{template_key}' vẫn còn (conf: {re_match.confidence:.2f}) -> Bấm lại tại ({tap_pos[0]}, {tap_pos[1]})...")
                     self._tap(tap_pos[0], tap_pos[1], label=f"Retry {template_key}")
                     last_retry = time.perf_counter()
             except Exception:
                 pass
-            time.sleep(0.06)
+            time.sleep(0.005)
         logger.warning(f"⚠️ Hết thời gian chờ đóng popup '{template_key}'.")
         return False
 
@@ -163,7 +163,7 @@ class GameBot:
                     return match
             except Exception:
                 pass
-            time.sleep(0.06)
+            time.sleep(0.005)
         return None
 
     def wait_and_dismiss_all_popups(self, max_wait_sec: float = 3.5) -> bool:
@@ -178,7 +178,7 @@ class GameBot:
             try:
                 frame = self._wait_for_frame()
             except Exception:
-                time.sleep(0.06)
+                time.sleep(0.005)
                 continue
 
             # 1. Kiểm tra nút Rút lui
@@ -212,7 +212,7 @@ class GameBot:
             # Nếu không thấy popup nào xuất hiện nữa -> màn hình sạch, thoát ngay không chờ
             if not dismissed_any:
                 break
-            time.sleep(0.04)
+            time.sleep(0.005)
 
         return dismissed_any
 
@@ -273,7 +273,7 @@ class GameBot:
             try:
                 frame = self._wait_for_frame()
             except Exception:
-                time.sleep(0.06)
+                time.sleep(0.005)
                 continue
 
             elapsed = time.perf_counter() - t_start
@@ -308,7 +308,7 @@ class GameBot:
                     self._confirm_button_closed("ok_btn", self.cfg.ok_threshold, self.cfg.ok_roi, (cx, cy))
                     return "OUT_OF_ITEMS"
 
-            time.sleep(0.06)
+            time.sleep(0.005)
 
         # Kiểm tra dọn dẹp popup còn sót trước khi kết thúc
         if self.wait_and_dismiss_all_popups(max_wait_sec=1.5):
@@ -334,7 +334,7 @@ class GameBot:
             try:
                 frame = self._wait_for_frame()
             except Exception:
-                time.sleep(0.06)
+                time.sleep(0.005)
                 continue
 
             # Kiểm tra nếu xuất hiện popup OK (Hết lượt / Warrior Gem)
@@ -348,7 +348,6 @@ class GameBot:
                     logger.info(f"✨ [{vip_name}] Màn hình xuất hiện Warrior Gem khi mở dòng! Bấm OK tại ({cx}, {cy}).")
                     self._tap(cx, cy, label="Click OK (Warrior Gem)")
                     self._confirm_button_closed("ok_btn", self.cfg.ok_threshold, self.cfg.ok_roi, (cx, cy))
-                    time.sleep(0.2)
                     continue
                 else:
                     logger.warning(f"⚠️ [{vip_name}] Dòng này đã hết lượt đổi / hết vật phẩm! Bấm OK tại ({cx}, {cy}) và chuyển dòng ngay.")
@@ -362,7 +361,7 @@ class GameBot:
                 logger.info(f"🎲 [{vip_name}] Màn hình bàn cờ xúc xắc đã xuất hiện sẵn sàng.")
                 break
 
-            time.sleep(0.06)
+            time.sleep(0.005)
 
         round_idx = 1
         while round_idx <= max_rounds:
