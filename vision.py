@@ -166,6 +166,45 @@ class VisionEngine:
         best_match.found = (best_match.confidence >= min_threshold)
         return best_match
 
+    def check_row_for_targets(
+        self,
+        frame: np.ndarray,
+        row_roi: Rect,
+        min_threshold: float = 0.80,
+        enable_phuc_tung: bool = False,
+        phuc_tung_threshold: float = 0.78
+    ) -> Tuple[MatchResult, str]:
+        """
+        Kiểm tra một dòng cụ thể xem có chứa mục tiêu nhận quà hay không:
+        1. Luôn ưu tiên kiểm tra Kim Cương: 'kim_cuong_inner', 'kim_cuong'
+        2. Nếu bật enable_phuc_tung: kiểm tra thêm Phục Tùng C ('phuc_tung_c_inner', 'phuc_tung_c_icon', 'phuc_tung_c_text')
+        Trả về (MatchResult, target_type) với target_type là 'DIAMOND', 'PHUC_TUNG_C', hoặc 'NONE'.
+        """
+        # 1. Ưu tiên kiểm tra Kim Cương
+        diamond_match = self.check_row_for_diamond(frame, row_roi, min_threshold)
+        if diamond_match.found:
+            return diamond_match, "DIAMOND"
+
+        # 2. Nếu bật săn thêm Phục Tùng
+        if enable_phuc_tung:
+            best_pt = MatchResult(found=False, confidence=0.0)
+            pt_keys = ["phuc_tung_c_inner", "phuc_tung_c_icon", "phuc_tung_c_text"]
+            for pt_key in pt_keys:
+                match_pt = self.find_template(
+                    frame=frame,
+                    template_key_or_path=pt_key,
+                    threshold=0.0,
+                    roi=row_roi
+                )
+                if match_pt.confidence > best_pt.confidence:
+                    best_pt = match_pt
+
+            if best_pt.confidence >= phuc_tung_threshold:
+                best_pt.found = True
+                return best_pt, "PHUC_TUNG_C"
+
+        return MatchResult(found=False, confidence=0.0), "NONE"
+
     def find_best_matching_row(
         self,
         frame: np.ndarray,

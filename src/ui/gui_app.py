@@ -233,7 +233,40 @@ class ModernBotApp(ctk.CTk):
             state="readonly"
         )
         self.strategy_cb.set("even (Ưu tiên Chẵn)")
-        self.strategy_cb.pack(fill="x", padx=16, pady=(0, 10))
+        self.strategy_cb.pack(fill="x", padx=16, pady=(0, 8))
+
+        # Switch: Ăn thêm Phục Tùng (C & D)
+        self.phuc_tung_switch = ctk.CTkSwitch(
+            left_card,
+            text="Ăn thêm Phục Tùng (C & D)",
+            font=ctk.CTkFont(family="Segoe UI", size=12),
+            text_color=("#334155", "#cbd5e1"),
+            progress_color="#0284c7"
+        )
+        self.phuc_tung_switch.pack(anchor="w", padx=16, pady=(2, 6))
+
+        # Nhãn & Lựa chọn Ngôn ngữ Game (ở bên dưới mục Phục Tùng)
+        ctk.CTkLabel(
+            left_card,
+            text="Ngôn ngữ Game:",
+            font=ctk.CTkFont(family="Segoe UI", size=12),
+            text_color=("#64748b", "#94a3b8")
+        ).pack(anchor="w", padx=16, pady=(2, 2))
+
+        self.lang_cb = ctk.CTkComboBox(
+            left_card,
+            values=["auto (Tự động nhận diện)", "vi (Tiếng Việt)", "en (English)"],
+            fg_color=("#f8fafc", "#0a0e17"),
+            border_color=("#cbd5e1", "#334155"),
+            dropdown_fg_color=("#ffffff", "#1e293b"),
+            text_color=("#0f172a", "#f8fafc"),
+            font=ctk.CTkFont(family="Segoe UI", size=12),
+            dropdown_font=ctk.CTkFont(family="Segoe UI", size=12),
+            height=34,
+            state="readonly"
+        )
+        self.lang_cb.set("auto (Tự động nhận diện)")
+        self.lang_cb.pack(fill="x", padx=16, pady=(0, 6))
 
         self.debug_switch = ctk.CTkSwitch(
             left_card,
@@ -523,6 +556,16 @@ class ModernBotApp(ctk.CTk):
             config.even_odd_strategy = "odd"
         else:
             config.even_odd_strategy = "random"
+
+        # Phục Tùng C & D và Ngôn ngữ
+        config.enable_phuc_tung = (self.phuc_tung_switch.get() == 1)
+        lang_raw = self.lang_cb.get()
+        if "vi" in lang_raw:
+            config.game_language = "vi"
+        elif "en" in lang_raw:
+            config.game_language = "en"
+        else:
+            config.game_language = "auto"
 
         log_level = logging.DEBUG if self.debug_switch.get() else logging.INFO
         logging.getLogger().setLevel(log_level)

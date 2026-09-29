@@ -59,12 +59,17 @@ class BotConfig:
     # Template matching thresholds (Kim Cương >= 0.80 theo yêu cầu)
     default_threshold: float = 0.80
     diamond_threshold: float = 0.80  # Ngưỡng nhận diện Kim Cương >= 0.80
+    phuc_tung_threshold: float = 0.78  # Ngưỡng nhận diện Phục Tùng (C & D)
     button_threshold: float = 0.78
     rut_lui_threshold: float = 0.72  # Ngưỡng nhận diện nút Rút lui (kèm ROI chống nhận diện nhầm)
     ok_threshold: float = 0.72
 
     # Chiến lược chọn Even/Odd (Mặc định chọn CHẴN)
     even_odd_strategy: str = "even"
+
+    # Tuỳ chọn ăn thêm Phục Tùng C & D và Ngôn ngữ game
+    enable_phuc_tung: bool = False
+    game_language: str = "auto"  # "auto", "vi", "en"
 
     # Số lần nhận quà tối đa cho mỗi dòng item
     vip7_rounds_per_row: int = 2  # VIP7 tối đa 2 lần
@@ -91,16 +96,25 @@ class BotConfig:
     templates: Dict[str, Path] = field(default_factory=lambda: {
         "kim_cuong": IMAGES_DIR / "kim_cuong_icon.png",
         "kim_cuong_inner": IMAGES_DIR / "kim_cuong_inner.png",
+        "phuc_tung_c_icon": IMAGES_DIR / "phuc_tung_c_icon.png",
+        "phuc_tung_c_inner": IMAGES_DIR / "phuc_tung_c_inner.png",
+        "phuc_tung_c_text": IMAGES_DIR / "phuc_tung_c_text.png",
         "vip7_tab": IMAGES_DIR / "vip7_tab.png",
         "vip9_tab": IMAGES_DIR / "vip9_tab.png",
         "even_btn": IMAGES_DIR / "even_button.png",
         "odd_btn": IMAGES_DIR / "odd_button.png",
         "rut_lui_btn": IMAGES_DIR / "rut_lui_button.png",
+        "withdraw_btn": IMAGES_DIR / "withdraw_button.png",
         "ok_btn": IMAGES_DIR / "ok_button.png",
+        "ok_btn_vi": IMAGES_DIR / "ok_button_vi.png",
+        "out_of_items_en": IMAGES_DIR / "out_of_items_en.png",
+        "exchange_not_available_en": IMAGES_DIR / "exchange_not_available_en.png",
         "arale_header": IMAGES_DIR / "arale_header.png",
         "no_turns_text": IMAGES_DIR / "no_turns_text.png",
         "out_of_items_text": IMAGES_DIR / "out_of_items_text.png",
         "warrior_gem_text": IMAGES_DIR / "warrior_gem_text.png",
+        "warrior_gem_en": IMAGES_DIR / "warrior_gem_en.png",
+        "warrior_gem_full_en": IMAGES_DIR / "warrior_gem_full_en.png",
         "reset_btn": IMAGES_DIR / "reset_button.png",
     })
 
@@ -195,12 +209,12 @@ class BotConfig:
 
     @property
     def ok_roi(self) -> Rect:
-        """Vùng xuất hiện nút OK (ở nửa dưới màn hình dọc theo trục Y từ 65% đến 96%)."""
+        """Vùng xuất hiện nút OK (ở nửa dưới màn hình dọc theo trục Y từ 55% đến 91%, bao quát cả popup mới lẫn popup Warrior Gem/cũ)."""
         return Rect(
             x=int(0.15 * self.target_width),
-            y=int(0.65 * self.target_height),
+            y=int(0.55 * self.target_height),
             w=int(0.70 * self.target_width),
-            h=int(0.30 * self.target_height)
+            h=int(0.36 * self.target_height)
         )
 
     @property
@@ -209,7 +223,8 @@ class BotConfig:
 
     @property
     def ok_btn_pos(self) -> Tuple[int, int]:
-        return int(0.500 * self.target_width), int(0.880 * self.target_height)
+        """Toạ độ nút OK trên giao diện cuộn thư mới (542, 1340 trên 1080x1920)."""
+        return int(0.502 * self.target_width), int(0.698 * self.target_height)
 
     @property
     def reset_btn_pos(self) -> Tuple[int, int]:

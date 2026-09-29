@@ -89,21 +89,52 @@ class GameBot:
 
     def classify_ok_popup(self, frame: np.ndarray) -> str:
         """
-        Phân biệt chính xác nội dung chữ trong popup cuộn thư Arale:
-        - 'WARRIOR_GEM': Chứa chữ "Warrior Gem" (Bấm OK và tiếp tục lượt chơi).
-        - 'EXHAUSTED': Chứa chữ "Không còn lượt đổi nào" hoặc "Không đủ vật phẩm trong kho đồ" (Bấm OK và chuyển dòng).
+        Phân biệt chính xác nội dung chữ trong popup cuộn thư (Hỗ trợ Song ngữ Việt - Anh):
+        - 'WARRIOR_GEM': Chứa chữ "Warrior Gem" hoặc có mũ Arale (Bấm OK và tiếp tục lượt chơi).
+        - 'EXHAUSTED':
+          + Tiếng Anh: "Exchange not available" hoặc "Not enough item(s) in inventory."
+          + Tiếng Việt: "Không còn lượt đổi nào" hoặc "Không đủ vật phẩm trong kho đồ."
+          (Bấm OK và chuyển dòng).
         """
-        # 1. Kiểm tra chữ Warrior Gem
-        match_wg = self.vision.find_template(frame, "warrior_gem_text", threshold=0.55)
-        if match_wg.found:
+        # 1. Kiểm tra chữ Warrior Gem bản Tiếng Anh (English UI)
+        match_wg_full_en = self.vision.find_template(frame, "warrior_gem_full_en", threshold=0.75)
+        if match_wg_full_en.found:
+            logger.info("✨ [Popup] Nhận diện popup: 'warrior gem exchange(s) have been rolled' (English)")
             return "WARRIOR_GEM"
 
-        # 2. Kiểm tra chữ Hết lượt đổi
+        match_wg_en = self.vision.find_template(frame, "warrior_gem_en", threshold=0.75)
+        if match_wg_en.found:
+            logger.info("✨ [Popup] Nhận diện popup: 'warrior gem' (English)")
+            return "WARRIOR_GEM"
+
+        # 2. Kiểm tra chữ Warrior Gem bản Tiếng Việt
+        match_wg = self.vision.find_template(frame, "warrior_gem_text", threshold=0.55)
+        if match_wg.found:
+            logger.info("✨ [Popup] Nhận diện popup: 'Warrior Gem' (Tiếng Việt)")
+            return "WARRIOR_GEM"
+
+        # 3. Kiểm tra mũ Arale đặc trưng (chỉ xuất hiện trên popup quay trúng Warrior Gem)
+        match_arale = self.vision.find_template(frame, "arale_header", threshold=0.80)
+        if match_arale.found:
+            logger.info("✨ [Popup] Nhận diện popup Warrior Gem qua mũ Arale!")
+            return "WARRIOR_GEM"
+
+        # 4. Kiểm tra thông báo hết lượt / hết vật phẩm (English UI)
+        match_out_en = self.vision.find_template(frame, "out_of_items_en", threshold=0.60)
+        if match_out_en.found:
+            logger.info("ℹ️ [Popup] Nhận diện thông báo: 'Not enough item(s) in inventory.'")
+            return "EXHAUSTED"
+
+        match_title_en = self.vision.find_template(frame, "exchange_not_available_en", threshold=0.60)
+        if match_title_en.found:
+            logger.info("ℹ️ [Popup] Nhận diện tiêu đề: 'Exchange not available'")
+            return "EXHAUSTED"
+
+        # 5. Kiểm tra thông báo hết lượt / hết vật phẩm (Tiếng Việt)
         match_no_turns = self.vision.find_template(frame, "no_turns_text", threshold=0.55)
         if match_no_turns.found:
             return "EXHAUSTED"
 
-        # 3. Kiểm tra chữ Hết vật phẩm kho đồ
         match_out = self.vision.find_template(frame, "out_of_items_text", threshold=0.55)
         if match_out.found:
             return "EXHAUSTED"
@@ -166,9 +197,47 @@ class GameBot:
             time.sleep(0.005)
         return None
 
+    def _find_reward_button(self, frame: np.ndarray) -> Tuple[Optional[MatchResult], str]:
+        """
+        Tìm nút nhận thưởng, tự động hỗ trợ song song cả 2 ngôn ngữ:
+        - Tiếng Việt: 'rut_lui_btn' (Rút lui)
+        - Tiếng Anh: 'withdraw_btn' (Withdraw)
+        """
+        match_vi = self.vision.find_template(
+            frame, "rut_lui_btn", threshold=self.cfg.rut_lui_threshold, roi=self.cfg.rut_lui_roi
+        )
+        if match_vi.found:
+            return match_vi, "rut_lui_btn"
+
+        match_en = self.vision.find_template(
+            frame, "withdraw_btn", threshold=self.cfg.rut_lui_threshold, roi=self.cfg.rut_lui_roi
+        )
+        if match_en.found:
+            return match_en, "withdraw_btn"
+
+        return None, ""
+
+    def _find_ok_button(self, frame: np.ndarray) -> Tuple[Optional[MatchResult], str]:
+        """
+        Tìm nút OK trên popup cuộn thư, tự động hỗ trợ cả giao diện mới ('ok_btn') và giao diện cũ ('ok_btn_vi').
+        """
+        match_new = self.vision.find_template(
+            frame, "ok_btn", threshold=self.cfg.ok_threshold, roi=self.cfg.ok_roi
+        )
+        if match_new.found:
+            return match_new, "ok_btn"
+
+        match_old = self.vision.find_template(
+            frame, "ok_btn_vi", threshold=self.cfg.ok_threshold, roi=self.cfg.ok_roi
+        )
+        if match_old.found:
+            return match_old, "ok_btn_vi"
+
+        return None, ""
+
     def wait_and_dismiss_all_popups(self, max_wait_sec: float = 3.5) -> bool:
         """
-        Theo dõi màn hình và bấm đóng tất cả các popup (OK / Rút lui / Warrior Gem) cho tới khi màn hình hoàn toàn sạch.
+        Theo dõi màn hình và bấm đóng tất cả các popup (OK / Rút lui / Withdraw / Warrior Gem) cho tới khi màn hình hoàn toàn sạch.
         Đảm bảo phải bấm thành công và popup biến mất mới kết thúc!
         """
         t_start = time.perf_counter()
@@ -181,30 +250,27 @@ class GameBot:
                 time.sleep(0.005)
                 continue
 
-            # 1. Kiểm tra nút Rút lui
-            match_rut_lui = self.vision.find_template(
-                frame, "rut_lui_btn", threshold=self.cfg.rut_lui_threshold, roi=self.cfg.rut_lui_roi
-            )
-            if match_rut_lui.found:
-                cx, cy = match_rut_lui.center
-                logger.info(f"🔔 [Popup Rút lui] Đang xuất hiện tại ({cx}, {cy}) -> Bấm Rút lui!")
-                self._tap(cx, cy, label="Click Rut Lui")
-                self._confirm_button_closed("rut_lui_btn", self.cfg.rut_lui_threshold, self.cfg.rut_lui_roi, (cx, cy))
+            # 1. Kiểm tra nút Rút lui / Withdraw (Song ngữ Việt - Anh)
+            match_btn, btn_key = self._find_reward_button(frame)
+            if match_btn and match_btn.found:
+                cx, cy = match_btn.center
+                btn_name = "Rút lui" if btn_key == "rut_lui_btn" else "Withdraw"
+                logger.info(f"🔔 [Popup {btn_name}] Đang xuất hiện tại ({cx}, {cy}) -> Bấm {btn_name}!")
+                self._tap(cx, cy, label=f"Click {btn_name}")
+                self._confirm_button_closed(btn_key, self.cfg.rut_lui_threshold, self.cfg.rut_lui_roi, (cx, cy))
                 dismissed_any = True
                 t_start = time.perf_counter()
                 continue
 
-            # 2. Kiểm tra nút OK
-            match_ok = self.vision.find_template(
-                frame, "ok_btn", threshold=self.cfg.ok_threshold, roi=self.cfg.ok_roi
-            )
-            if match_ok.found:
+            # 2. Kiểm tra nút OK (Giao diện mới & cũ)
+            match_ok, ok_key = self._find_ok_button(frame)
+            if match_ok and match_ok.found:
                 cx, cy = match_ok.center
                 p_type = self.classify_ok_popup(frame)
                 popup_label = "Warrior Gem" if p_type == "WARRIOR_GEM" else "Hết lượt / Vật phẩm"
                 logger.info(f"🔔 [Popup {popup_label}] Đang xuất hiện tại ({cx}, {cy}) -> Bấm OK!")
                 self._tap(cx, cy, label=f"Click OK ({popup_label})")
-                self._confirm_button_closed("ok_btn", self.cfg.ok_threshold, self.cfg.ok_roi, (cx, cy))
+                self._confirm_button_closed(ok_key, self.cfg.ok_threshold, self.cfg.ok_roi, (cx, cy))
                 dismissed_any = True
                 t_start = time.perf_counter()
                 continue
@@ -278,34 +344,31 @@ class GameBot:
 
             elapsed = time.perf_counter() - t_start
 
-            # 1. Kiểm tra nếu xuất hiện nút [Rút lui] trong ROI popup
-            match_rut_lui = self.vision.find_template(
-                frame, "rut_lui_btn", threshold=self.cfg.rut_lui_threshold, roi=self.cfg.rut_lui_roi
-            )
-            if match_rut_lui.found:
-                cx, cy = match_rut_lui.center
-                logger.info(f"🎉 [Nhận quà] Màn hình đã xuất hiện nút 'Rút lui' sau {elapsed:.2f}s (conf: {match_rut_lui.confidence:.2f}) -> Bấm tại ({cx}, {cy})")
-                self._tap(cx, cy, label="Click Rut Lui")
-                # Xác nhận nút Rút lui đã đóng hoàn toàn
-                self._confirm_button_closed("rut_lui_btn", self.cfg.rut_lui_threshold, self.cfg.rut_lui_roi, (cx, cy))
+            # 1. Kiểm tra nếu xuất hiện nút [Rút lui] / [Withdraw] (Song ngữ Việt - Anh)
+            match_btn, btn_key = self._find_reward_button(frame)
+            if match_btn and match_btn.found:
+                cx, cy = match_btn.center
+                btn_name = "Rút lui" if btn_key == "rut_lui_btn" else "Withdraw"
+                logger.info(f"🎉 [Nhận quà] Màn hình đã xuất hiện nút '{btn_name}' sau {elapsed:.2f}s (conf: {match_btn.confidence:.2f}) -> Bấm tại ({cx}, {cy})")
+                self._tap(cx, cy, label=f"Click {btn_name}")
+                # Xác nhận nút đã đóng hoàn toàn
+                self._confirm_button_closed(btn_key, self.cfg.rut_lui_threshold, self.cfg.rut_lui_roi, (cx, cy))
                 return "SUCCESS"
 
             # 2. Kiểm tra nếu xuất hiện popup [OK] trong ROI popup
-            match_ok = self.vision.find_template(
-                frame, "ok_btn", threshold=self.cfg.ok_threshold, roi=self.cfg.ok_roi
-            )
-            if match_ok.found:
+            match_ok, ok_key = self._find_ok_button(frame)
+            if match_ok and match_ok.found:
                 cx, cy = match_ok.center
                 p_type = self.classify_ok_popup(frame)
                 if p_type == "WARRIOR_GEM":
                     logger.info(f"✨ [Warrior Gem] Màn hình xuất hiện popup Warrior Gem sau {elapsed:.2f}s! Bấm OK tại ({cx}, {cy}) và tiếp tục chơi.")
                     self._tap(cx, cy, label="Click OK (Warrior Gem)")
-                    self._confirm_button_closed("ok_btn", self.cfg.ok_threshold, self.cfg.ok_roi, (cx, cy))
+                    self._confirm_button_closed(ok_key, self.cfg.ok_threshold, self.cfg.ok_roi, (cx, cy))
                     return "WARRIOR_GEM"
                 else:
                     logger.warning(f"⚠️ [Hết lượt / Hết vật phẩm] Màn hình xuất hiện popup hết lượt sau {elapsed:.2f}s! Bấm OK tại ({cx}, {cy}) để chuyển dòng.")
                     self._tap(cx, cy, label="Click OK (Het luot doi)")
-                    self._confirm_button_closed("ok_btn", self.cfg.ok_threshold, self.cfg.ok_roi, (cx, cy))
+                    self._confirm_button_closed(ok_key, self.cfg.ok_threshold, self.cfg.ok_roi, (cx, cy))
                     return "OUT_OF_ITEMS"
 
             time.sleep(0.005)
@@ -338,21 +401,19 @@ class GameBot:
                 continue
 
             # Kiểm tra nếu xuất hiện popup OK (Hết lượt / Warrior Gem)
-            match_init_ok = self.vision.find_template(
-                frame, "ok_btn", threshold=self.cfg.ok_threshold, roi=self.cfg.ok_roi
-            )
-            if match_init_ok.found:
+            match_init_ok, ok_key = self._find_ok_button(frame)
+            if match_init_ok and match_init_ok.found:
                 cx, cy = match_init_ok.center
                 p_type = self.classify_ok_popup(frame)
                 if p_type == "WARRIOR_GEM":
                     logger.info(f"✨ [{vip_name}] Màn hình xuất hiện Warrior Gem khi mở dòng! Bấm OK tại ({cx}, {cy}).")
                     self._tap(cx, cy, label="Click OK (Warrior Gem)")
-                    self._confirm_button_closed("ok_btn", self.cfg.ok_threshold, self.cfg.ok_roi, (cx, cy))
+                    self._confirm_button_closed(ok_key, self.cfg.ok_threshold, self.cfg.ok_roi, (cx, cy))
                     continue
                 else:
                     logger.warning(f"⚠️ [{vip_name}] Dòng này đã hết lượt đổi / hết vật phẩm! Bấm OK tại ({cx}, {cy}) và chuyển dòng ngay.")
                     self._tap(cx, cy, label="Click OK (Het luot doi)")
-                    self._confirm_button_closed("ok_btn", self.cfg.ok_threshold, self.cfg.ok_roi, (cx, cy))
+                    self._confirm_button_closed(ok_key, self.cfg.ok_threshold, self.cfg.ok_roi, (cx, cy))
                     return False
 
             # Kiểm tra nếu nút EVEN đã xuất hiện (bàn cờ xúc xắc đã mở sẵn sàng trên màn hình)
@@ -413,19 +474,22 @@ class GameBot:
             for idx, target_row in enumerate(rows):
                 self.dismiss_popup_if_present()
                 frame = self._wait_for_frame()
-                match = self.vision.check_row_for_diamond(
+                match, target_type = self.vision.check_row_for_targets(
                     frame=frame,
                     row_roi=target_row,
-                    min_threshold=self.cfg.diamond_threshold
+                    min_threshold=self.cfg.diamond_threshold,
+                    enable_phuc_tung=self.cfg.enable_phuc_tung,
+                    phuc_tung_threshold=self.cfg.phuc_tung_threshold
                 )
 
                 if match.found:
                     cx, cy = target_row.center
-                    logger.info(f"💎 [VIP7] Phát hiện Kim Cương ở DÒNG #{idx + 1} (conf: {match.confidence:.3f} >= {self.cfg.diamond_threshold:.2f}). Bấm tại ({cx}, {cy})")
+                    item_label = "Kim Cương" if target_type == "DIAMOND" else "Phục Tùng C (Obedient C)"
+                    logger.info(f"💎 [VIP7] Phát hiện {item_label} ở DÒNG #{idx + 1} (conf: {match.confidence:.3f}). Bấm tại ({cx}, {cy})")
                     self._tap(cx, cy, label=f"Click Center Row #{idx + 1}")
                     self.play_diamond_row(max_rounds, vip_name="VIP7")
                 else:
-                    logger.info(f"[VIP7] Dòng #{idx + 1} không có Kim Cương (conf: {match.confidence:.3f} < {self.cfg.diamond_threshold:.2f}). Bỏ qua.")
+                    logger.info(f"[VIP7] Dòng #{idx + 1} không có Kim Cương / Phục Tùng (conf: {match.confidence:.3f}). Bỏ qua.")
 
             logger.info("[VIP7] Đã kiểm tra xong lần lượt tất cả các dòng của VIP7. Chuyển sang VIP9.")
 
@@ -438,19 +502,22 @@ class GameBot:
             for idx, target_row in enumerate(initial_rows):
                 self.dismiss_popup_if_present()
                 frame = self._wait_for_frame()
-                match = self.vision.check_row_for_diamond(
+                match, target_type = self.vision.check_row_for_targets(
                     frame=frame,
                     row_roi=target_row,
-                    min_threshold=self.cfg.diamond_threshold
+                    min_threshold=self.cfg.diamond_threshold,
+                    enable_phuc_tung=self.cfg.enable_phuc_tung,
+                    phuc_tung_threshold=self.cfg.phuc_tung_threshold
                 )
 
                 if match.found:
                     cx, cy = target_row.center
-                    logger.info(f"💎 [VIP9] Phát hiện Kim Cương ở DÒNG #{idx + 1} (conf: {match.confidence:.3f} >= {self.cfg.diamond_threshold:.2f}). Bấm tại ({cx}, {cy})")
+                    item_label = "Kim Cương" if target_type == "DIAMOND" else "Phục Tùng C (Obedient C)"
+                    logger.info(f"💎 [VIP9] Phát hiện {item_label} ở DÒNG #{idx + 1} (conf: {match.confidence:.3f}). Bấm tại ({cx}, {cy})")
                     self._tap(cx, cy, label=f"Click Center Row #{idx + 1}")
                     self.play_diamond_row(max_rounds, vip_name="VIP9")
                 else:
-                    logger.info(f"[VIP9] Dòng #{idx + 1} không có Kim Cương (conf: {match.confidence:.3f} < {self.cfg.diamond_threshold:.2f}). Bỏ qua.")
+                    logger.info(f"[VIP9] Dòng #{idx + 1} không có Kim Cương / Phục Tùng (conf: {match.confidence:.3f}). Bỏ qua.")
 
             # 2. Kiểm tra tiếp Dòng 4 của VIP9 (đang ở sẵn VIP9, chỉ cần vuốt cuộn lên)
             logger.info("[VIP9] Cuộn khay item lên để kiểm tra Dòng 4...")
@@ -473,19 +540,22 @@ class GameBot:
 
             if scrolled_rows:
                 r4 = scrolled_rows[0]
-                match_r4 = self.vision.check_row_for_diamond(
+                match_r4, target_type_r4 = self.vision.check_row_for_targets(
                     frame=frame,
                     row_roi=r4,
-                    min_threshold=self.cfg.diamond_threshold
+                    min_threshold=self.cfg.diamond_threshold,
+                    enable_phuc_tung=self.cfg.enable_phuc_tung,
+                    phuc_tung_threshold=self.cfg.phuc_tung_threshold
                 )
 
                 if match_r4.found:
                     cx, cy = r4.center
-                    logger.info(f"💎 [VIP9] Phát hiện Kim Cương ở DÒNG 4 (conf: {match_r4.confidence:.3f} >= {self.cfg.diamond_threshold:.2f}). Bấm tại ({cx}, {cy})")
+                    item_label = "Kim Cương" if target_type_r4 == "DIAMOND" else "Phục Tùng C (Obedient C)"
+                    logger.info(f"💎 [VIP9] Phát hiện {item_label} ở DÒNG 4 (conf: {match_r4.confidence:.3f}). Bấm tại ({cx}, {cy})")
                     self._tap(cx, cy, label="Click Row 4")
                     self.play_diamond_row(max_rounds, vip_name="VIP9")
                 else:
-                    logger.info(f"[VIP9] Không có Kim Cương ở Dòng 4 (conf: {match_r4.confidence:.3f} < {self.cfg.diamond_threshold:.2f}).")
+                    logger.info(f"[VIP9] Không có Kim Cương / Phục Tùng ở Dòng 4 (conf: {match_r4.confidence:.3f}).")
 
             # Kết thúc Dòng 4 -> Luôn cuộn trả khay item về lại đầu trang với cùng lực kéo đối xứng
             self.dismiss_popup_if_present()
