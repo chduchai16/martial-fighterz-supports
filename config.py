@@ -123,6 +123,7 @@ class BotConfig:
     templates: Dict[str, Path] = field(default_factory=lambda: {
         "kim_cuong": IMAGES_DIR / "kim_cuong_icon.png",
         "kim_cuong_inner": IMAGES_DIR / "kim_cuong_inner.png",
+        "kim_cuong_clean_en": IMAGES_DIR / "diamond_crystal_clean_en.png",
         "phuc_tung_c_icon": IMAGES_DIR / "phuc_tung_c_icon.png",
         "phuc_tung_c_inner": IMAGES_DIR / "phuc_tung_c_inner.png",
         "phuc_tung_c_text": IMAGES_DIR / "phuc_tung_c_text.png",

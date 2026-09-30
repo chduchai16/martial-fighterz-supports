@@ -35,6 +35,7 @@ class GameBot:
         self.cycle_count = 0
         self.success_count = 0
         self.current_vip = "vip7"  # Bắt đầu vòng đầu tiên từ VIP7, các vòng sau sẽ đảo chiều thông minh
+        self._stopped = False
 
     def start(self):
         """Khởi động hệ thống capture và nạp template."""
@@ -43,7 +44,10 @@ class GameBot:
         logger.info("GameBot đã sẵn sàng hoạt động.")
 
     def stop(self):
-        """Dừng GameBot an toàn."""
+        """Dừng GameBot an toàn (chỉ dừng 1 lần)."""
+        if self._stopped:
+            return
+        self._stopped = True
         logger.info("Đang dừng GameBot...")
         self.capture.stop()
         logger.info("GameBot đã dừng.")
