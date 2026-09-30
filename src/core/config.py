@@ -4,17 +4,45 @@ Cấu hình hệ thống bot tự động hoá game trên MuMu Player / LDPlayer
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+import sys
 
-# Thư mục gốc dự án (parent.parent của src/core/config.py)
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
+def _resolve_base_dir() -> Path:
+    """
+    Trả về thư mục gốc chứa images/, assets/ ... (read-only bundled data).
+    - PyInstaller 6.x: data files nằm trong sys._MEIPASS (_internal/).
+    - Dev mode (src/core): tính ngược 3 cấp để về gốc dự án.
+    """
+    if getattr(sys, 'frozen', False):
+        return Path(sys._MEIPASS)  # type: ignore[attr-defined]
+    else:
+        return Path(__file__).resolve().parent.parent.parent
+
+
+def _resolve_writable_dir() -> Path:
+    """
+    Trả về thư mục có thể ghi được (logs, debug) cạnh exe khi frozen,
+    hoặc gốc dự án khi dev mode.
+    """
+    if getattr(sys, 'frozen', False):
+        return Path(sys.executable).resolve().parent
+    else:
+        return Path(__file__).resolve().parent.parent.parent
+
+
+# Thư mục gốc dự án (bundled assets)
+BASE_DIR = _resolve_base_dir()
+# Thư mục có thể ghi (logs, debug) - cạnh exe khi frozen
+WRITABLE_DIR = _resolve_writable_dir()
 # Ưu tiên thư mục assets/templates nếu có, fallback về images/
 IMAGES_DIR = BASE_DIR / "assets" / "templates" if (BASE_DIR / "assets" / "templates").exists() else BASE_DIR / "images"
-DEBUG_DIR = BASE_DIR / "debug_dumps"
-LOGS_DIR = BASE_DIR / "logs"
+DEBUG_DIR = WRITABLE_DIR / "debug_dumps"
+LOGS_DIR = WRITABLE_DIR / "logs"
 
 IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 DEBUG_DIR.mkdir(parents=True, exist_ok=True)
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
+
 
 
 @dataclass
@@ -96,6 +124,7 @@ class BotConfig:
     templates: Dict[str, Path] = field(default_factory=lambda: {
         "kim_cuong": IMAGES_DIR / "kim_cuong_icon.png",
         "kim_cuong_inner": IMAGES_DIR / "kim_cuong_inner.png",
+        "kim_cuong_clean_en": IMAGES_DIR / "diamond_crystal_clean_en.png",
         "phuc_tung_c_icon": IMAGES_DIR / "phuc_tung_c_icon.png",
         "phuc_tung_c_inner": IMAGES_DIR / "phuc_tung_c_inner.png",
         "phuc_tung_c_text": IMAGES_DIR / "phuc_tung_c_text.png",

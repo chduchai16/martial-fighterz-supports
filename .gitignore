@@ -16,3 +16,9 @@ venv/
 ENV/
 .vscode/
 .idea/
+
+# PyInstaller build artifacts
+build/
+dist/
+*.spec
+*.pkg

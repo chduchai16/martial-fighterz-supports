@@ -100,11 +100,11 @@ class ModernBotApp(ctk.CTk):
         )
         sub_lbl.pack(anchor="w")
 
-        # Cụm điều khiển bên phải header: Status Badge + Nút Toggle Theme Sáng/Tối
+        # Cụm điều khiển bên phải header: Status Badge + Nút Action + Nút Toggle Theme Sáng/Tối
         right_header_frame = ctk.CTkFrame(header, fg_color="transparent")
         right_header_frame.pack(side="right", padx=20, pady=8)
 
-        # Nút chuyển giao diện Sáng / Tối
+        # Nút chuyển giao diện Sáng / Tối (ngoài cùng bên phải)
         self.theme_switch = ctk.CTkSwitch(
             right_header_frame,
             text="Chế độ Tối",
@@ -117,7 +117,38 @@ class ModernBotApp(ctk.CTk):
         self.theme_switch.deselect()
         self.theme_switch.pack(side="right", padx=(14, 0))
 
-        # Status Badge
+        # Nút Dừng (Stop)
+        self.btn_stop = ctk.CTkButton(
+            right_header_frame,
+            text="⏹ DỪNG LẠI",
+            command=self.stop_task,
+            font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"),
+            fg_color=("#cbd5e1", "#334155"),
+            hover_color="#dc2626",
+            text_color=("#64748b", "#94a3b8"),
+            width=96,
+            height=34,
+            corner_radius=8,
+            state="disabled"
+        )
+        self.btn_stop.pack(side="right", padx=(8, 0))
+
+        # Nút Bắt đầu Chạy (Run) - Nằm ngay cạnh tag Sẵn sàng
+        self.btn_run = ctk.CTkButton(
+            right_header_frame,
+            text="▶ BẮT ĐẦU CHẠY",
+            command=self.start_task,
+            font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"),
+            fg_color="#059669",
+            hover_color="#047857",
+            text_color="#ffffff",
+            width=140,
+            height=34,
+            corner_radius=8
+        )
+        self.btn_run.pack(side="right", padx=(12, 0))
+
+        # Status Badge (Tag Sẵn sàng)
         self.status_badge = ctk.CTkLabel(
             right_header_frame,
             text="● SẴN SÀNG (IDLE)",
@@ -125,7 +156,7 @@ class ModernBotApp(ctk.CTk):
             text_color=("#059669", "#34d399"),
             fg_color=("#d1fae5", "#064e3b"),
             corner_radius=12,
-            padx=16,
+            padx=14,
             pady=6
         )
         self.status_badge.pack(side="right")
@@ -279,34 +310,6 @@ class ModernBotApp(ctk.CTk):
 
         # Divider
         ctk.CTkFrame(left_card, height=1, fg_color=("#e2e8f0", "#1e293b")).pack(fill="x", padx=16, pady=16)
-
-        # Cụm Action Buttons
-        self.btn_run = ctk.CTkButton(
-            left_card,
-            text="BẮT ĐẦU CHẠY",
-            command=self.start_task,
-            font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"),
-            fg_color="#059669",
-            hover_color="#047857",
-            text_color="#ffffff",
-            height=44,
-            corner_radius=8
-        )
-        self.btn_run.pack(fill="x", padx=16, pady=(0, 8))
-
-        self.btn_stop = ctk.CTkButton(
-            left_card,
-            text="DỪNG LẠI (STOP)",
-            command=self.stop_task,
-            font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"),
-            fg_color=("#cbd5e1", "#334155"),
-            hover_color="#dc2626",
-            text_color=("#64748b", "#94a3b8"),
-            height=38,
-            corner_radius=8,
-            state="disabled"
-        )
-        self.btn_stop.pack(fill="x", padx=16, pady=(0, 8))
 
         # Bottom Stats Bar
         stats_frame = ctk.CTkFrame(left_card, fg_color="transparent")

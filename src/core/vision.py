@@ -153,7 +153,7 @@ class VisionEngine:
         So khớp với cả mẫu 'kim_cuong_inner' và 'kim_cuong' để đạt điểm nhận diện cao nhất.
         """
         best_match = MatchResult(found=False, confidence=0.0)
-        for t_key in ["kim_cuong_inner", "kim_cuong"]:
+        for t_key in ["kim_cuong_clean_en", "kim_cuong_inner", "kim_cuong"]:
             match = self.find_template(
                 frame=frame,
                 template_key_or_path=t_key,
@@ -218,7 +218,7 @@ class VisionEngine:
         # Nếu đang tìm kim cương, thử cả cụm kim cương inner lẫn icon đầy đủ
         template_keys = [template_key_or_path]
         if str(template_key_or_path) == "kim_cuong":
-            template_keys = ["kim_cuong_inner", "kim_cuong"]
+            template_keys = ["kim_cuong_clean_en", "kim_cuong_inner", "kim_cuong"]
 
         best_overall_idx = None
         best_overall_match = None
