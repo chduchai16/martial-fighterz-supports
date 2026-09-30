@@ -19,6 +19,11 @@ from vision import MatchResult, VisionEngine
 logger = logging.getLogger("GameBot.Core")
 
 
+class BotStoppedException(Exception):
+    """Ngoại lệ ném ra khi bot nhận tín hiệu dừng từ người dùng."""
+    pass
+
+
 class GameBot:
     """
     Class điều khiển bot theo State Machine hoàn chỉnh.
@@ -37,9 +42,15 @@ class GameBot:
         self.current_vip = "vip7"  # Bắt đầu vòng đầu tiên từ VIP7, các vòng sau sẽ đảo chiều thông minh
         self._stopped = False
 
+    def _check_stop(self):
+        """Kiểm tra và ngắt bot ngay lập tức nếu nhận lệnh dừng."""
+        if self._stopped:
+            raise BotStoppedException("GameBot đã nhận tín hiệu dừng!")
+
     def start(self):
         """Khởi động hệ thống capture và nạp template."""
         logger.info("Đang khởi động GameBot...")
+        self._stopped = False
         self.capture.start()
         logger.info("GameBot đã sẵn sàng hoạt động.")
 
@@ -54,7 +65,9 @@ class GameBot:
 
     def _wait_for_frame(self, timeout: float = 3.5) -> np.ndarray:
         """Lấy frame mới nhất và tự động đồng bộ độ phân giải."""
+        self._check_stop()
         frame = self.capture.get_latest_frame(timeout=timeout)
+        self._check_stop()
         if frame is None:
             raise TimeoutError("Không nhận được frame từ thiết bị!")
         
@@ -68,28 +81,33 @@ class GameBot:
 
     def _tap(self, x: int, y: int, label: str = "Tap"):
         """Gửi lệnh tap vào toạ độ (x, y) tức thì qua Persistent Shell."""
+        self._check_stop()
         logger.info(f"[{label}] -> Tap tại điểm ({x}, {y})")
         self.capture.tap(x, y, jitter_px=self.cfg.tap_jitter_px)
 
     def _swipe_vip9_up(self):
         """Vuốt cuộn khay item VIP9 lên để lộ Dòng 4."""
+        self._check_stop()
         w, h = self.cfg.target_width, self.cfg.target_height
         x1 = int(self.cfg.swipe_vip9_start_ratio[0] * w)
         y1 = int(self.cfg.swipe_vip9_start_ratio[1] * h)
         x2 = int(self.cfg.swipe_vip9_end_ratio[0] * w)
         y2 = int(self.cfg.swipe_vip9_end_ratio[1] * h)
         logger.info(f"[VIP9] Đang cuộn khay item lên: từ ({x1}, {y1}) -> ({x2}, {y2})...")
-        self.capture.swipe(x1, y1, x2, y2, duration=0.2)
+        self.capture.swipe(x1, y1, x2, y2, duration=0.45)
+        time.sleep(self.cfg.wait_after_scroll)
 
     def _swipe_vip9_down(self):
         """Vuốt cuộn khay item VIP9 xuống để trở về vị trí đầu, hiện full Dòng 1."""
+        self._check_stop()
         w, h = self.cfg.target_width, self.cfg.target_height
         x1 = int(self.cfg.swipe_vip9_end_ratio[0] * w)
         y1 = int(self.cfg.swipe_vip9_end_ratio[1] * h)
         x2 = int(self.cfg.swipe_vip9_start_ratio[0] * w)
         y2 = int(self.cfg.swipe_vip9_start_ratio[1] * h)
         logger.info(f"[VIP9] Đang cuộn khay item xuống lại đầu trang: từ ({x1}, {y1}) -> ({x2}, {y2})...")
-        self.capture.swipe(x1, y1, x2, y2, duration=0.2)
+        self.capture.swipe(x1, y1, x2, y2, duration=0.45)
+        time.sleep(self.cfg.wait_after_scroll)
 
     def classify_ok_popup(self, frame: np.ndarray) -> str:
         """
@@ -189,6 +207,7 @@ class GameBot:
         lbl = label or template_key
         t_start = time.perf_counter()
         while time.perf_counter() - t_start < timeout:
+            self._check_stop()
             try:
                 frame = self._wait_for_frame()
                 match = self.vision.find_template(frame, template_key, threshold=thresh, roi=roi)
@@ -196,6 +215,8 @@ class GameBot:
                     elapsed = time.perf_counter() - t_start
                     logger.info(f"👁️ [{lbl}] Màn hình đã xuất hiện '{template_key}' sau {elapsed:.2f}s (conf: {match.confidence:.2f}) tại {match.center}")
                     return match
+            except BotStoppedException:
+                raise
             except Exception:
                 pass
             time.sleep(0.005)
@@ -294,33 +315,36 @@ class GameBot:
 
     def enter_vip_section(self, vip_type: str = "vip7") -> bool:
         """Chuyển vào Tab 3 (VIP7) hoặc Tab 4 (VIP9) tức thì bằng toạ độ cố định qua Persistent Shell."""
+        self._check_stop()
         logger.info(f"=== [STATE] Vào Tab {vip_type.upper()} ===")
         pos = self.cfg.vip7_tab_pos if vip_type == "vip7" else self.cfg.vip9_tab_pos
         # Bấm Tab ngay lập tức qua Persistent Shell (<5ms)
         self._tap(pos[0], pos[1], label=f"Click Tab {vip_type.upper()}")
         return True
 
-    def choose_even_odd(self, timeout: float = 8.0) -> bool:
+    def choose_even_odd(self, timeout: float = 0.0) -> bool:
         """
-        Chờ màn hình xuất hiện nút CHẴN (EVEN) rồi mới bấm.
-        Không bấm mò trước khi màn hình kịp render.
+        Bấm nút CHẴN (EVEN) hoặc LẺ (ODD) trực tiếp theo toạ độ cố định.
+        Nút này luôn nằm cố định trên giao diện game (không cần quét template chờ đợi).
         """
-        logger.info("[EVEN] Chờ nút CHẴN (EVEN) xuất hiện trên màn hình...")
-        match = self.wait_for_template(
-            template_key="even_btn",
-            threshold=self.cfg.button_threshold,
-            timeout=timeout,
-            label="Nút CHẴN (EVEN)"
-        )
-        if match:
-            cx, cy = match.center
-            self._tap(cx, cy, label="Select EVEN")
-            return True
+        self._check_stop()
+        strategy = getattr(self.cfg, "even_odd_strategy", "even").lower()
+        if strategy == "random":
+            choice = random.choice(["even", "odd"])
+        elif strategy == "odd":
+            choice = "odd"
         else:
-            fx, fy = self.cfg.even_btn_pos
-            logger.warning(f"[EVEN] Hết thời gian chờ {timeout}s không thấy nút EVEN -> Bấm toạ độ dự phòng ({fx}, {fy})")
-            self._tap(fx, fy, label="Select EVEN (Fallback)")
-            return False
+            choice = "even"
+
+        if choice == "odd":
+            cx, cy = self.cfg.odd_btn_pos
+            logger.info(f"🎲 [Cược ODD] Bấm nút LẺ (ODD) tại ({cx}, {cy})")
+            self._tap(cx, cy, label="Select ODD")
+        else:
+            cx, cy = self.cfg.even_btn_pos
+            logger.info(f"🎲 [Cược EVEN] Bấm nút CHẴN (EVEN) tại ({cx}, {cy})")
+            self._tap(cx, cy, label="Select EVEN")
+        return True
 
     def wait_and_handle_reward_popup(self, max_wait_sec: Optional[float] = None) -> str:
         """
@@ -340,8 +364,11 @@ class GameBot:
         logger.info(f"⏳ Đang theo dõi màn hình chờ xúc xắc xong và nút Rút lui / Popup xuất hiện...")
 
         while time.perf_counter() - t_start < wait_limit:
+            self._check_stop()
             try:
                 frame = self._wait_for_frame()
+            except BotStoppedException:
+                raise
             except Exception:
                 time.sleep(0.005)
                 continue
@@ -388,57 +415,26 @@ class GameBot:
     def play_diamond_row(self, max_rounds: int, vip_name: str = "VIP") -> bool:
         """
         Chơi các lượt nhận quà cho 1 dòng Kim Cương.
-        Theo dõi màn hình thực tế:
-        - Màn hình mở bàn cờ (nút EVEN xuất hiện) -> chơi lượt.
-        - Màn hình hiện popup lỗi/hết lượt -> bấm OK và dừng dòng.
-        - Màn hình hiện popup Warrior Gem -> bấm OK và tiếp tục.
+        - Bấm cược Even/Odd ngay lập tức (không delay).
+        - Theo dõi phản hồi: nếu thiếu item, game hiện popup lỗi -> bấm OK đóng và chuyển dòng ngay.
+        - Nếu hợp lệ: xúc xắc quay và hiện nút Rút lui/Withdraw -> bấm nhận quà.
         """
+        self._check_stop()
         logger.info(f"--- [CHƠI DÒNG KIM CƯƠNG ({vip_name})] Chuỗi tối đa {max_rounds} lượt nhận quà ---")
-        
-        # 1. Chờ màn hình chuyển cảnh: hoặc mở bàn cờ (nút EVEN), hoặc xuất hiện popup OK
-        t_open_start = time.perf_counter()
-        while time.perf_counter() - t_open_start < 6.0:
-            try:
-                frame = self._wait_for_frame()
-            except Exception:
-                time.sleep(0.005)
-                continue
-
-            # Kiểm tra nếu xuất hiện popup OK (Hết lượt / Warrior Gem)
-            match_init_ok, ok_key = self._find_ok_button(frame)
-            if match_init_ok and match_init_ok.found:
-                cx, cy = match_init_ok.center
-                p_type = self.classify_ok_popup(frame)
-                if p_type == "WARRIOR_GEM":
-                    logger.info(f"✨ [{vip_name}] Màn hình xuất hiện Warrior Gem khi mở dòng! Bấm OK tại ({cx}, {cy}).")
-                    self._tap(cx, cy, label="Click OK (Warrior Gem)")
-                    self._confirm_button_closed(ok_key, self.cfg.ok_threshold, self.cfg.ok_roi, (cx, cy))
-                    continue
-                else:
-                    logger.warning(f"⚠️ [{vip_name}] Dòng này đã hết lượt đổi / hết vật phẩm! Bấm OK tại ({cx}, {cy}) và chuyển dòng ngay.")
-                    self._tap(cx, cy, label="Click OK (Het luot doi)")
-                    self._confirm_button_closed(ok_key, self.cfg.ok_threshold, self.cfg.ok_roi, (cx, cy))
-                    return False
-
-            # Kiểm tra nếu nút EVEN đã xuất hiện (bàn cờ xúc xắc đã mở sẵn sàng trên màn hình)
-            match_even = self.vision.find_template(frame, "even_btn", threshold=self.cfg.button_threshold)
-            if match_even.found:
-                logger.info(f"🎲 [{vip_name}] Màn hình bàn cờ xúc xắc đã xuất hiện sẵn sàng.")
-                break
-
-            time.sleep(0.005)
 
         round_idx = 1
         while round_idx <= max_rounds:
+            self._check_stop()
             logger.info(f"👉 [{vip_name}] Lượt chơi #{round_idx}/{max_rounds}...")
-            # Chờ và bấm nút EVEN khi nó xuất hiện trên màn hình
-            self.choose_even_odd(timeout=6.0)
 
-            # Chờ theo dõi kết quả xúc xắc & nút Rút lui / Popup xuất hiện trên màn hình
+            # Bấm ngay nút EVEN hoặc ODD theo chiến thuật (toạ độ cố định, 0s delay)
+            self.choose_even_odd()
+
+            # Chờ phản hồi từ game (Loading -> Kết quả xúc xắc & Rút lui HOẶC Popup không đủ vật phẩm)
             status = self.wait_and_handle_reward_popup(max_wait_sec=self.cfg.api_loading_timeout)
 
             if status == "OUT_OF_ITEMS":
-                logger.warning(f"[{vip_name}] Dòng này đã hết lượt đổi/vật phẩm ở lượt #{round_idx}. Chuyển sang dòng khác!")
+                logger.warning(f"[{vip_name}] Dòng này không đủ vật phẩm / hết lượt ở lượt #{round_idx}. Chuyển sang dòng khác ngay!")
                 self.dismiss_popup_if_present()
                 return False
             elif status == "WARRIOR_GEM":
@@ -467,6 +463,7 @@ class GameBot:
         - Sau khi chơi xong 1 dòng (đang ở sẵn trong tab VIP), tiếp tục quét ngay các dòng còn lại mà không cần bấm lại Tab.
         - Chỉ chuyển sang VIP tiếp theo (hoặc Reset) khi đã kiểm tra và chơi hết TẤT CẢ các dòng có Kim Cương!
         """
+        self._check_stop()
         max_rounds = self.cfg.vip7_rounds_per_row if vip_type == "vip7" else self.cfg.vip9_rounds_per_row
         processed_rows: Set[int] = set()
 
@@ -476,6 +473,7 @@ class GameBot:
             rows = self.cfg.vip7_rows
 
             for idx, target_row in enumerate(rows):
+                self._check_stop()
                 self.dismiss_popup_if_present()
                 frame = self._wait_for_frame()
                 match, target_type = self.vision.check_row_for_targets(
@@ -504,6 +502,7 @@ class GameBot:
 
             # Quét lần lượt từ trên xuống dưới các dòng ban đầu (Dòng 1 -> Dòng 2 -> Dòng 3)
             for idx, target_row in enumerate(initial_rows):
+                self._check_stop()
                 self.dismiss_popup_if_present()
                 frame = self._wait_for_frame()
                 match, target_type = self.vision.check_row_for_targets(
@@ -524,11 +523,13 @@ class GameBot:
                     logger.info(f"[VIP9] Dòng #{idx + 1} không có Kim Cương / Phục Tùng (conf: {match.confidence:.3f}). Bỏ qua.")
 
             # 2. Kiểm tra tiếp Dòng 4 của VIP9 (đang ở sẵn VIP9, chỉ cần vuốt cuộn lên)
+            self._check_stop()
             logger.info("[VIP9] Cuộn khay item lên để kiểm tra Dòng 4...")
             self.dismiss_popup_if_present()
             self._swipe_vip9_up()
 
             scrolled_rows = self.cfg.vip9_scrolled_rows
+            self._check_stop()
             frame = self._wait_for_frame()
 
             # Tự động lưu ảnh Dòng 4 vào thư mục line_4 để người dùng kiểm tra trực quan
@@ -543,6 +544,7 @@ class GameBot:
                 logger.debug(f"Lỗi lưu ảnh debug line_4: {e}")
 
             if scrolled_rows:
+                self._check_stop()
                 r4 = scrolled_rows[0]
                 match_r4, target_type_r4 = self.vision.check_row_for_targets(
                     frame=frame,
@@ -568,29 +570,20 @@ class GameBot:
     def reset_cycle(self) -> bool:
         """
         Bấm Refresh/Reset để làm mới vòng lặp.
-        - Chờ nút Reset xuất hiện trên màn hình -> Bấm Reset.
+        - Bấm trực tiếp toạ độ cố định tại nút Refresh tức thì qua Persistent Shell (<5ms).
         - Dọn dẹp popup nếu có thông báo đột xuất (ví dụ Warrior Gem) rồi tiếp tục ngay!
         """
+        self._check_stop()
         logger.info("=== [STATE] Bấm Reset (Refresh) ===")
         self.dismiss_popup_if_present()
+        self._check_stop()
 
-        # 1. Chờ nút Reset xuất hiện trên màn hình
-        logger.info("⏳ Chờ nút Reset xuất hiện trên màn hình...")
-        reset_match = self.wait_for_template(
-            template_key="reset_btn",
-            threshold=self.cfg.button_threshold,
-            timeout=3.0,
-            label="Nút Reset (Refresh)"
-        )
-        if reset_match:
-            cx, cy = reset_match.center
-        else:
-            cx, cy = self.cfg.reset_btn_pos
-
+        cx, cy = self.cfg.reset_btn_pos
         logger.info(f"🔄 Bấm nút Reset tại ({cx}, {cy})")
         self._tap(cx, cy, label="Reset Cycle")
 
-        # 2. Dọn dẹp nếu có popup đột xuất
+        # Dọn dẹp nếu có popup đột xuất
+        time.sleep(self.cfg.wait_after_reset)
         self.dismiss_popup_if_present()
         logger.info("✅ Đã làm mới (Reset) xong chu kỳ!")
         return True
@@ -604,32 +597,42 @@ class GameBot:
         - Nếu đang ở VIP9: VIP9 -> VIP7 -> Reset -> (Ở lại VIP7)
         Tiết kiệm tối đa thao tác chuyển tab.
         """
+        self._check_stop()
         self.cycle_count += 1
         cycle_start = time.perf_counter()
         logger.info(f"\n==================== BẮT ĐẦU VÒNG #{self.cycle_count} (Bắt đầu từ {self.current_vip.upper()}) ====================")
 
-        # 0. Tự động đóng popup nếu có từ trước
-        self.dismiss_popup_if_present()
+        try:
+            # 0. Tự động đóng popup nếu có từ trước
+            self.dismiss_popup_if_present()
+            self._check_stop()
 
-        if self.current_vip == "vip7":
-            # Flow: VIP7 -> VIP9 -> Reset
-            self.process_vip_section("vip7")
-            self.process_vip_section("vip9")
-            self.reset_cycle()
-            # Sau khi Reset ở VIP9, vòng tiếp theo sẽ ở luôn VIP9 chơi trước!
-            self.current_vip = "vip9"
-        else:
-            # Flow: VIP9 -> VIP7 -> Reset
-            self.process_vip_section("vip9")
-            self.process_vip_section("vip7")
-            self.reset_cycle()
-            # Sau khi Reset ở VIP7, vòng tiếp theo sẽ ở luôn VIP7 chơi trước!
-            self.current_vip = "vip7"
+            if self.current_vip == "vip7":
+                # Flow: VIP7 -> VIP9 -> Reset
+                self.process_vip_section("vip7")
+                self._check_stop()
+                self.process_vip_section("vip9")
+                self._check_stop()
+                self.reset_cycle()
+                # Sau khi Reset ở VIP9, vòng tiếp theo sẽ ở luôn VIP9 chơi trước!
+                self.current_vip = "vip9"
+            else:
+                # Flow: VIP9 -> VIP7 -> Reset
+                self.process_vip_section("vip9")
+                self._check_stop()
+                self.process_vip_section("vip7")
+                self._check_stop()
+                self.reset_cycle()
+                # Sau khi Reset ở VIP7, vòng tiếp theo sẽ ở luôn VIP7 chơi trước!
+                self.current_vip = "vip7"
 
-        total_time_sec = time.perf_counter() - cycle_start
-        self.success_count += 1
-        logger.info(f"✅ Hoàn thành vòng #{self.cycle_count} trong {total_time_sec:.2f}s! (Vòng kế tiếp sẽ bắt đầu từ: {self.current_vip.upper()})")
-        return True
+            total_time_sec = time.perf_counter() - cycle_start
+            self.success_count += 1
+            logger.info(f"✅ Hoàn thành vòng #{self.cycle_count} trong {total_time_sec:.2f}s! (Vòng kế tiếp sẽ bắt đầu từ: {self.current_vip.upper()})")
+            return True
+        except BotStoppedException:
+            logger.info("🛑 Bot đã dừng ngay lập tức theo lệnh người dùng.")
+            return False
 
     def run_forever(self):
         """Vòng lặp vô hạn chạy liên tục."""

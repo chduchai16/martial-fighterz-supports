@@ -8,6 +8,12 @@ import logging
 import sys
 import time
 
+# Đảm bảo hiển thị Tiếng Việt trên Windows console không bị lỗi cp1252 charmap
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 from pathlib import Path
 ROOT_DIR = Path(__file__).resolve().parent
 if str(ROOT_DIR) not in sys.path:
@@ -80,7 +86,7 @@ def test_single_state(bot: GameBot, state_name: str):
             "diamond_vip7": lambda: bot.process_vip_section("vip7"),
             "diamond_vip9": lambda: bot.process_vip_section("vip9"),
             "even_odd": bot.choose_even_odd,
-            "popup": bot.handle_reward_popup,
+            "popup": bot.wait_and_handle_reward_popup,
             "reset": bot.reset_cycle,
         }
 
@@ -111,7 +117,7 @@ def main():
         help="Tên state khi dùng mode test-state (vip7, diamond_vip7, even_odd, claim, vip9, diamond_vip9, reset)"
     )
     parser.add_argument("--serial", type=str, help="ADB Serial của thiết bị (VD: 127.0.0.1:5555)")
-    parser.add_argument("--strategy", choices=["random", "even", "odd"], default="random", help="Chiến lược Even/Odd")
+    parser.add_argument("--strategy", choices=["random", "even", "odd"], default="even", help="Chiến lược Even/Odd (mặc định: even)")
     parser.add_argument("--debug", action="store_true", help="Bật log debug chi tiết")
 
     args = parser.parse_args()

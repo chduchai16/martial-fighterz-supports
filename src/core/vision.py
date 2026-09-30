@@ -203,7 +203,10 @@ class VisionEngine:
                 best_pt.found = True
                 return best_pt, "PHUC_TUNG_C"
 
-        return MatchResult(found=False, confidence=0.0), "NONE"
+            best_res = diamond_match if diamond_match.confidence >= best_pt.confidence else best_pt
+            return best_res, "NONE"
+
+        return diamond_match, "NONE"
 
     def find_best_matching_row(
         self,

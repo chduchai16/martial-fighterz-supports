@@ -481,10 +481,6 @@ class ModernBotApp(ctk.CTk):
         root_logger.setLevel(logging.INFO)
         root_logger.addHandler(queue_handler)
 
-        logging.getLogger("GameBot.Core").addHandler(queue_handler)
-        logging.getLogger("GameBot.Capture").addHandler(queue_handler)
-        logging.getLogger("GameBot.Vision").addHandler(queue_handler)
-
     def _append_log_line(self, level: str, msg: str):
         self.all_logs.append((level, msg))
         flt = self.log_filter_cb.get()
@@ -595,7 +591,9 @@ class ModernBotApp(ctk.CTk):
             self.bot_instance.start()
             logging.info("[Chẵn Lẻ] Vòng lặp tự động bắt đầu...")
             while not self.stop_event.is_set():
-                self.bot_instance.run_one_cycle()
+                ok = self.bot_instance.run_one_cycle()
+                if not ok or self.stop_event.is_set():
+                    break
         except Exception as e:
             logging.error(f"Lỗi trong quá trình chạy: {e}", exc_info=True)
         finally:

@@ -203,7 +203,10 @@ class VisionEngine:
                 best_pt.found = True
                 return best_pt, "PHUC_TUNG_C"
 
-        return MatchResult(found=False, confidence=0.0), "NONE"
+            best_res = diamond_match if diamond_match.confidence >= best_pt.confidence else best_pt
+            return best_res, "NONE"
+
+        return diamond_match, "NONE"
 
     def find_best_matching_row(
         self,
@@ -218,7 +221,7 @@ class VisionEngine:
         # Nếu đang tìm kim cương, thử cả cụm kim cương inner lẫn icon đầy đủ
         template_keys = [template_key_or_path]
         if str(template_key_or_path) == "kim_cuong":
-            template_keys = ["kim_cuong_inner", "kim_cuong"]
+            template_keys = ["kim_cuong_clean_en", "kim_cuong_inner", "kim_cuong"]
 
         best_overall_idx = None
         best_overall_match = None

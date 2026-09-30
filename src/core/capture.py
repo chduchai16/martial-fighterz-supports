@@ -59,6 +59,7 @@ class FastCapture:
         self.bitrate = bitrate
         self.adb_bin = find_adb_executable()
         self._running = False
+        self._explicitly_stopped = False
         self._shell_proc: Optional[subprocess.Popen] = None
 
     def _run_adb(self, args: List[str], timeout: float = 3.0) -> subprocess.CompletedProcess:
@@ -153,14 +154,37 @@ class FastCapture:
             logger.error("👉 Hãy đảm bảo MuMu Player đang bật, và kiểm tra tính năng ADB trong Cài đặt MuMu.")
 
         self._running = True
+        self._explicitly_stopped = False
         # Mở sẵn ống kết nối Persistent Shell ngay từ lúc start
         self._init_persistent_shell()
 
     def get_latest_frame(self, timeout: float = 3.5) -> Optional[np.ndarray]:
-        """Chụp màn hình qua adb exec-out screencap -p."""
+        """Chụp màn hình siêu tốc qua adb exec-out screencap (Raw RGBA, ~0.4s) với fallback screencap -p."""
+        if self._explicitly_stopped:
+            return None
         if not self._running:
             self.start()
 
+        # 1. Thử Raw screencap siêu tốc (không nén PNG trên CPU máy ảo, nhanh hơn 3 lần)
+        try:
+            cmd = [self.adb_bin]
+            if self.device_serial:
+                cmd.extend(["-s", self.device_serial])
+            cmd.extend(["exec-out", "screencap"])
+
+            res = subprocess.run(cmd, capture_output=True, timeout=timeout)
+            if res.returncode == 0 and len(res.stdout) >= 16:
+                raw = res.stdout
+                w = int.from_bytes(raw[0:4], byteorder="little")
+                h = int.from_bytes(raw[4:8], byteorder="little")
+                expected = 16 + w * h * 4
+                if len(raw) >= expected and w > 0 and h > 0:
+                    img_rgba = np.frombuffer(raw[16:expected], dtype=np.uint8).reshape((h, w, 4))
+                    return cv2.cvtColor(img_rgba, cv2.COLOR_RGBA2BGR)
+        except Exception as e:
+            logger.debug(f"Raw screencap fallback: {e}")
+
+        # 2. Fallback sang screencap -p truyền thống
         try:
             cmd = [self.adb_bin]
             if self.device_serial:
@@ -180,6 +204,8 @@ class FastCapture:
 
     def tap(self, x: int, y: int, jitter_px: int = 4):
         """Tap tại điểm (x, y) qua Persistent Shell siêu tốc kèm jitter nhẹ."""
+        if self._explicitly_stopped:
+            return
         if jitter_px > 0:
             x += random.randint(-jitter_px, jitter_px)
             y += random.randint(-jitter_px, jitter_px)
@@ -191,12 +217,15 @@ class FastCapture:
 
     def swipe(self, x1: int, y1: int, x2: int, y2: int, duration: float = 0.3):
         """Vuốt cuộn màn hình qua Persistent Shell."""
+        if self._explicitly_stopped:
+            return
         duration_ms = int(duration * 1000)
         self._send_shell_cmd(f"input swipe {x1} {y1} {x2} {y2} {duration_ms}")
 
     def stop(self):
         """Dừng kết nối và đóng Persistent Shell."""
         self._running = False
+        self._explicitly_stopped = True
         if self._shell_proc:
             try:
                 if self._shell_proc.stdin:

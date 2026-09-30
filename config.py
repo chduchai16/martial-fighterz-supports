@@ -114,7 +114,7 @@ class BotConfig:
     wait_after_even_odd: float = 0.15   # Giảm từ 0.5s -> 0.15s sau khi bấm Even/Odd
     wait_after_rut_lui: float = 0.10    # Giảm từ 0.4s -> 0.10s sau khi bấm Rút lui
     wait_after_reset: float = 0.50      # Giảm từ 1.0s -> 0.50s sau khi bấm Reset
-    wait_after_scroll: float = 0.25     # Giảm từ 0.5s -> 0.25s sau khi cuộn trang
+    wait_after_scroll: float = 0.40     # Đợi hoạt ảnh cuộn trang ổn định trước khi chụp ảnh
 
     # Độ lệch pixel ngẫu nhiên khi tap
     tap_jitter_px: int = 4
@@ -127,8 +127,6 @@ class BotConfig:
         "phuc_tung_c_icon": IMAGES_DIR / "phuc_tung_c_icon.png",
         "phuc_tung_c_inner": IMAGES_DIR / "phuc_tung_c_inner.png",
         "phuc_tung_c_text": IMAGES_DIR / "phuc_tung_c_text.png",
-        "vip7_tab": IMAGES_DIR / "vip7_tab.png",
-        "vip9_tab": IMAGES_DIR / "vip9_tab.png",
         "even_btn": IMAGES_DIR / "even_button.png",
         "odd_btn": IMAGES_DIR / "odd_button.png",
         "rut_lui_btn": IMAGES_DIR / "rut_lui_button.png",
@@ -143,33 +141,32 @@ class BotConfig:
         "warrior_gem_text": IMAGES_DIR / "warrior_gem_text.png",
         "warrior_gem_en": IMAGES_DIR / "warrior_gem_en.png",
         "warrior_gem_full_en": IMAGES_DIR / "warrior_gem_full_en.png",
-        "reset_btn": IMAGES_DIR / "reset_button.png",
     })
 
     # Toạ độ 3 dòng VIP7
     vip7_rows_ratio: List[Tuple[float, float, float, float]] = field(default_factory=lambda: [
-        (0.0088, 0.5848, 0.9824, 0.1262),  # Dòng 1 VIP7
-        (0.0088, 0.7219, 0.9824, 0.1262),  # Dòng 2 VIP7
-        (0.0088, 0.8599, 0.9824, 0.1000),  # Dòng 3 VIP7
+        (0.0088, 0.5850, 0.9824, 0.1360),  # Dòng 1 VIP7
+        (0.0088, 0.7240, 0.9824, 0.1360),  # Dòng 2 VIP7
+        (0.0088, 0.8630, 0.9824, 0.1360),  # Dòng 3 VIP7
     ])
 
     # Toạ độ 3 dòng VIP9 ban đầu (Dòng 1, 2, 3 - không cần cuộn)
     vip9_initial_rows_ratio: List[Tuple[float, float, float, float]] = field(default_factory=lambda: [
-        (0.0088, 0.5848, 0.9824, 0.1262),  # Dòng 1 VIP9 (Top)
-        (0.0088, 0.7219, 0.9824, 0.1262),  # Dòng 2 VIP9 (Mid)
-        (0.0088, 0.8150, 0.9824, 0.1262),  # Dòng 3 VIP9 (Bot - chưa cuộn)
+        (0.0088, 0.5850, 0.9824, 0.1360),  # Dòng 1 VIP9
+        (0.0088, 0.7240, 0.9824, 0.1360),  # Dòng 2 VIP9
+        (0.0088, 0.8630, 0.9824, 0.1360),  # Dòng 3 VIP9 (chưa cuộn)
     ])
 
-    # Toạ độ duy nhất cho DÒNG 4 VIP9 sau khi cuộn lên (nhích cao lên: y/H = 0.8150)
+    # Toạ độ duy nhất cho DÒNG 4 VIP9 sau khi cuộn lên hết cỡ chạm đáy
     vip9_scrolled_rows_ratio: List[Tuple[float, float, float, float]] = field(default_factory=lambda: [
-        (0.0088, 0.8150, 0.9824, 0.1262),  # Duy nhất Dòng 4 VIP9 sau khi cuộn
+        (0.0088, 0.7708, 0.9824, 0.1365),  # Dòng 4 VIP9 sau khi cuộn lên (y=1480, h=262)
     ])
 
-    # Toạ độ vuốt cuộn nằm hoàn toàn bên trong khung khay item (Y từ 62% đến 90% màn hình)
-    # Swipe UP: Chạm tại 90% kéo lên 62%
-    # Swipe DOWN: Chạm tại 62% kéo xuống 90%
-    swipe_vip9_start_ratio: Tuple[float, float] = (0.50, 0.90)
-    swipe_vip9_end_ratio: Tuple[float, float] = (0.50, 0.62)
+    # Toạ độ vuốt cuộn nằm an toàn bên trong khay item (tránh thanh điều hướng Home/Adventure ở đáy)
+    # Swipe UP: Chạm tại Y=82% vuốt lên Y=60%
+    # Swipe DOWN: Chạm tại Y=60% vuốt xuống Y=82%
+    swipe_vip9_start_ratio: Tuple[float, float] = (0.40, 0.82)
+    swipe_vip9_end_ratio: Tuple[float, float] = (0.40, 0.60)
 
     @property
     def vip7_rows(self) -> List[Rect]:
@@ -219,11 +216,11 @@ class BotConfig:
 
     @property
     def even_btn_pos(self) -> Tuple[int, int]:
-        return int(0.871 * self.target_width), int(0.420 * self.target_height)
+        return int(0.875 * self.target_width), int(0.422 * self.target_height)
 
     @property
     def odd_btn_pos(self) -> Tuple[int, int]:
-        return int(0.871 * self.target_width), int(0.327 * self.target_height)
+        return int(0.875 * self.target_width), int(0.328 * self.target_height)
 
     @property
     def rut_lui_roi(self) -> Rect:
@@ -256,7 +253,7 @@ class BotConfig:
 
     @property
     def reset_btn_pos(self) -> Tuple[int, int]:
-        return int(0.127 * self.target_width), int(0.232 * self.target_height)
+        return int(0.135 * self.target_width), int(0.233 * self.target_height)
 
 
 config = BotConfig()
