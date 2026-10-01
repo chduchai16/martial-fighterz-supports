@@ -85,29 +85,72 @@ class GameBot:
         logger.info(f"[{label}] -> Tap tại điểm ({x}, {y})")
         self.capture.tap(x, y, jitter_px=self.cfg.tap_jitter_px)
 
-    def _swipe_vip9_up(self):
-        """Vuốt cuộn khay item VIP9 lên để lộ Dòng 4."""
+    def _swipe_tray_up(self, label: str = "VIP"):
+        """Vuốt cuộn khay item lên để lộ dòng kế tiếp."""
         self._check_stop()
         w, h = self.cfg.target_width, self.cfg.target_height
         x1 = int(self.cfg.swipe_vip9_start_ratio[0] * w)
         y1 = int(self.cfg.swipe_vip9_start_ratio[1] * h)
         x2 = int(self.cfg.swipe_vip9_end_ratio[0] * w)
         y2 = int(self.cfg.swipe_vip9_end_ratio[1] * h)
-        logger.info(f"[VIP9] Đang cuộn khay item lên: từ ({x1}, {y1}) -> ({x2}, {y2})...")
+        logger.info(f"[{label}] Đang cuộn khay item lên: từ ({x1}, {y1}) -> ({x2}, {y2})...")
         self.capture.swipe(x1, y1, x2, y2, duration=0.45)
         time.sleep(self.cfg.wait_after_scroll)
 
-    def _swipe_vip9_down(self):
-        """Vuốt cuộn khay item VIP9 xuống để trở về vị trí đầu, hiện full Dòng 1."""
+    def _swipe_tray_down(self, label: str = "VIP", times: int = 1):
+        """Vuốt cuộn khay item xuống để trở về vị trí đầu, hiện full Dòng 1 và 2."""
         self._check_stop()
         w, h = self.cfg.target_width, self.cfg.target_height
         x1 = int(self.cfg.swipe_vip9_end_ratio[0] * w)
         y1 = int(self.cfg.swipe_vip9_end_ratio[1] * h)
         x2 = int(self.cfg.swipe_vip9_start_ratio[0] * w)
         y2 = int(self.cfg.swipe_vip9_start_ratio[1] * h)
-        logger.info(f"[VIP9] Đang cuộn khay item xuống lại đầu trang: từ ({x1}, {y1}) -> ({x2}, {y2})...")
-        self.capture.swipe(x1, y1, x2, y2, duration=0.45)
-        time.sleep(self.cfg.wait_after_scroll)
+        for i in range(times):
+            logger.info(f"[{label}] Đang cuộn khay item xuống lại đầu trang (lần {i+1}/{times})...")
+            self.capture.swipe(x1, y1, x2, y2, duration=0.35)
+            time.sleep(self.cfg.wait_after_scroll)
+
+    def _swipe_vip9_up(self):
+        self._swipe_tray_up("VIP9")
+
+    def _swipe_vip9_down(self):
+        self._swipe_tray_down("VIP9", times=2)
+
+    def _check_candidate_rois(
+        self,
+        frame: np.ndarray,
+        candidate_rois: List[Rect],
+        min_threshold: float,
+        enable_phuc_tung: bool = False,
+        phuc_tung_threshold: float = 0.78
+    ) -> Tuple[MatchResult, str, Optional[Rect]]:
+        """
+        Kiểm tra danh sách các ROI ứng viên của một dòng sau khi cuộn.
+        Chọn ROI có confidence cao nhất. Nếu đạt ngưỡng, trả về (best_match, target_type, best_roi).
+        """
+        best_match = MatchResult(found=False, confidence=0.0)
+        best_type = "NONE"
+        best_roi: Optional[Rect] = None
+
+        for roi in candidate_rois:
+            match, target_type = self.vision.check_row_for_targets(
+                frame=frame,
+                row_roi=roi,
+                min_threshold=min_threshold,
+                enable_phuc_tung=enable_phuc_tung,
+                phuc_tung_threshold=phuc_tung_threshold
+            )
+            if match.confidence > best_match.confidence:
+                best_match = match
+                best_type = target_type
+                best_roi = roi
+
+        is_found = (best_match.confidence >= min_threshold) or (enable_phuc_tung and best_type == "PHUC_TUNG_C" and best_match.confidence >= phuc_tung_threshold)
+        best_match.found = is_found
+        if is_found:
+            return best_match, best_type, best_roi
+
+        return best_match, "NONE", best_roi
 
     def classify_ok_popup(self, frame: np.ndarray) -> str:
         """
@@ -458,21 +501,21 @@ class GameBot:
         """
         Quản lý toàn bộ quy trình cho 1 tab VIP:
         - Chuyển vào Tab VIP 1 lần duy nhất khi bắt đầu.
-        - Quét tất cả các dòng trong tab VIP.
-        - Nếu có dòng nào xuất hiện Kim Cương (ngưỡng >= 0.80): Chơi hết số lượt cho dòng đó.
-        - Sau khi chơi xong 1 dòng (đang ở sẵn trong tab VIP), tiếp tục quét ngay các dòng còn lại mà không cần bấm lại Tab.
-        - Chỉ chuyển sang VIP tiếp theo (hoặc Reset) khi đã kiểm tra và chơi hết TẤT CẢ các dòng có Kim Cương!
+        - Dòng 1 và Dòng 2: Soi và chơi ở vị trí ban đầu (không bị che khuất).
+        - Dòng 3: Bị che khuất ở vị trí ban đầu -> Tự động kéo khay item lên để hiển thị đầy đủ rồi mới soi và chơi!
+        - Dòng 4 (ở VIP9): Xong 3 lượt dòng 3 (hoặc không có kim cương), tiếp tục kéo lên để soi và chơi Dòng 4!
+        - Sau khi xong tất cả các dòng: Cuộn trả về đầu trang để chuẩn bị cho chu kỳ tiếp theo.
         """
         self._check_stop()
         max_rounds = self.cfg.vip7_rounds_per_row if vip_type == "vip7" else self.cfg.vip9_rounds_per_row
-        processed_rows: Set[int] = set()
 
         if vip_type == "vip7":
             # 1. Chuyển vào Tab VIP7 1 lần duy nhất
             self.enter_vip_section("vip7")
-            rows = self.cfg.vip7_rows
+            initial_rows = self.cfg.vip7_initial_rows
 
-            for idx, target_row in enumerate(rows):
+            # Quét Dòng 1 và Dòng 2 ở vị trí ban đầu
+            for idx, target_row in enumerate(initial_rows):
                 self._check_stop()
                 self.dismiss_popup_if_present()
                 frame = self._wait_for_frame()
@@ -493,6 +536,34 @@ class GameBot:
                 else:
                     logger.info(f"[VIP7] Dòng #{idx + 1} không có Kim Cương / Phục Tùng (conf: {match.confidence:.3f}). Bỏ qua.")
 
+            # 2. Xử lý Dòng 3 VIP7: Kéo cuộn lên luôn để dòng 3 lộ ra hoàn toàn
+            self._check_stop()
+            logger.info("[VIP7] Cuộn khay item lên để kiểm tra Dòng 3...")
+            self.dismiss_popup_if_present()
+            self._swipe_tray_up(label="VIP7")
+            self._check_stop()
+            frame = self._wait_for_frame()
+
+            match_r3, target_type_r3, roi_r3 = self._check_candidate_rois(
+                frame=frame,
+                candidate_rois=self.cfg.vip7_scrolled_row3_candidates,
+                min_threshold=self.cfg.diamond_threshold,
+                enable_phuc_tung=self.cfg.enable_phuc_tung,
+                phuc_tung_threshold=self.cfg.phuc_tung_threshold
+            )
+
+            if match_r3.found and roi_r3:
+                cx, cy = roi_r3.center
+                item_label = "Kim Cương" if target_type_r3 == "DIAMOND" else "Phục Tùng C (Obedient C)"
+                logger.info(f"💎 [VIP7] Phát hiện {item_label} ở DÒNG 3 sau khi cuộn (conf: {match_r3.confidence:.3f}). Bấm tại ({cx}, {cy})")
+                self._tap(cx, cy, label="Click Row 3 (Scrolled)")
+                self.play_diamond_row(max_rounds, vip_name="VIP7")
+            else:
+                logger.info(f"[VIP7] Dòng 3 không có Kim Cương / Phục Tùng (conf: {match_r3.confidence:.3f}). Bỏ qua.")
+
+            # 3. Kết thúc VIP7 -> Luôn cuộn trả khay item về lại đầu trang
+            self.dismiss_popup_if_present()
+            self._swipe_tray_down(label="VIP7", times=1)
             logger.info("[VIP7] Đã kiểm tra xong lần lượt tất cả các dòng của VIP7. Chuyển sang VIP9.")
 
         else:
@@ -500,7 +571,7 @@ class GameBot:
             self.enter_vip_section("vip9")
             initial_rows = self.cfg.vip9_initial_rows
 
-            # Quét lần lượt từ trên xuống dưới các dòng ban đầu (Dòng 1 -> Dòng 2 -> Dòng 3)
+            # Quét Dòng 1 và Dòng 2 ở vị trí ban đầu
             for idx, target_row in enumerate(initial_rows):
                 self._check_stop()
                 self.dismiss_popup_if_present()
@@ -522,50 +593,71 @@ class GameBot:
                 else:
                     logger.info(f"[VIP9] Dòng #{idx + 1} không có Kim Cương / Phục Tùng (conf: {match.confidence:.3f}). Bỏ qua.")
 
-            # 2. Kiểm tra tiếp Dòng 4 của VIP9 (đang ở sẵn VIP9, chỉ cần vuốt cuộn lên)
+            # 2. Xử lý Dòng 3 VIP9: Kéo cuộn lên luôn để dòng 3 lộ ra hoàn toàn
             self._check_stop()
-            logger.info("[VIP9] Cuộn khay item lên để kiểm tra Dòng 4...")
+            logger.info("[VIP9] Cuộn khay item lên để kiểm tra Dòng 3...")
             self.dismiss_popup_if_present()
-            self._swipe_vip9_up()
-
-            scrolled_rows = self.cfg.vip9_scrolled_rows
+            self._swipe_tray_up(label="VIP9")
             self._check_stop()
             frame = self._wait_for_frame()
 
-            # Tự động lưu ảnh Dòng 4 vào thư mục line_4 để người dùng kiểm tra trực quan
+            match_r3, target_type_r3, roi_r3 = self._check_candidate_rois(
+                frame=frame,
+                candidate_rois=self.cfg.vip9_scrolled_row3_candidates,
+                min_threshold=self.cfg.diamond_threshold,
+                enable_phuc_tung=self.cfg.enable_phuc_tung,
+                phuc_tung_threshold=self.cfg.phuc_tung_threshold
+            )
+
+            if match_r3.found and roi_r3:
+                cx, cy = roi_r3.center
+                item_label = "Kim Cương" if target_type_r3 == "DIAMOND" else "Phục Tùng C (Obedient C)"
+                logger.info(f"💎 [VIP9] Phát hiện {item_label} ở DÒNG 3 sau khi cuộn (conf: {match_r3.confidence:.3f}). Bấm tại ({cx}, {cy})")
+                self._tap(cx, cy, label="Click Row 3 (Scrolled)")
+                self.play_diamond_row(max_rounds, vip_name="VIP9")
+            else:
+                logger.info(f"[VIP9] Dòng 3 không có Kim Cương / Phục Tùng (conf: {match_r3.confidence:.3f}). Bỏ qua.")
+
+            # 3. Xử lý Dòng 4 VIP9: Xong 3 lượt dòng 3 (hoặc không có kim cương), tiếp tục kéo lên để soi dòng 4!
+            self._check_stop()
+            logger.info("[VIP9] Tiếp tục cuộn khay item lên để kiểm tra Dòng 4...")
+            self.dismiss_popup_if_present()
+            self._swipe_tray_up(label="VIP9")
+            self._check_stop()
+            frame = self._wait_for_frame()
+
+            # Tự động lưu ảnh Dòng 4 vào thư mục line_4 để debug
             try:
                 line4_dir = Path("line_4")
                 line4_dir.mkdir(parents=True, exist_ok=True)
-                if scrolled_rows:
-                    r4 = scrolled_rows[0]
+                scrolled_r4_list = self.cfg.vip9_scrolled_row4_candidates
+                if scrolled_r4_list:
+                    r4 = scrolled_r4_list[0]
                     cropped_r4 = frame[r4.y : r4.y2, r4.x : r4.x2]
                     cv2.imwrite(str(line4_dir / "vip9_dong_4.png"), cropped_r4)
             except Exception as e:
                 logger.debug(f"Lỗi lưu ảnh debug line_4: {e}")
 
-            if scrolled_rows:
-                self._check_stop()
-                r4 = scrolled_rows[0]
-                match_r4, target_type_r4 = self.vision.check_row_for_targets(
-                    frame=frame,
-                    row_roi=r4,
-                    min_threshold=self.cfg.diamond_threshold,
-                    enable_phuc_tung=self.cfg.enable_phuc_tung,
-                    phuc_tung_threshold=self.cfg.phuc_tung_threshold
-                )
+            match_r4, target_type_r4, roi_r4 = self._check_candidate_rois(
+                frame=frame,
+                candidate_rois=self.cfg.vip9_scrolled_row4_candidates,
+                min_threshold=self.cfg.diamond_threshold,
+                enable_phuc_tung=self.cfg.enable_phuc_tung,
+                phuc_tung_threshold=self.cfg.phuc_tung_threshold
+            )
 
-                if match_r4.found:
-                    cx, cy = r4.center
-                    item_label = "Kim Cương" if target_type_r4 == "DIAMOND" else "Phục Tùng C (Obedient C)"
-                    logger.info(f"💎 [VIP9] Phát hiện {item_label} ở DÒNG 4 (conf: {match_r4.confidence:.3f}). Bấm tại ({cx}, {cy})")
-                    self._tap(cx, cy, label="Click Row 4")
-                    self.play_diamond_row(max_rounds, vip_name="VIP9")
-                else:
-                    logger.info(f"[VIP9] Không có Kim Cương / Phục Tùng ở Dòng 4 (conf: {match_r4.confidence:.3f}).")
+            if match_r4.found and roi_r4:
+                cx, cy = roi_r4.center
+                item_label = "Kim Cương" if target_type_r4 == "DIAMOND" else "Phục Tùng C (Obedient C)"
+                logger.info(f"💎 [VIP9] Phát hiện {item_label} ở DÒNG 4 sau khi cuộn (conf: {match_r4.confidence:.3f}). Bấm tại ({cx}, {cy})")
+                self._tap(cx, cy, label="Click Row 4 (Scrolled)")
+                self.play_diamond_row(max_rounds, vip_name="VIP9")
+            else:
+                logger.info(f"[VIP9] Dòng 4 không có Kim Cương / Phục Tùng (conf: {match_r4.confidence:.3f}). Bỏ qua.")
 
-            # Kết thúc Dòng 4 -> Luôn cuộn trả khay item về lại đầu trang với cùng lực kéo đối xứng
+            # 4. Kết thúc VIP9 -> Luôn cuộn trả khay item về lại đầu trang
             self.dismiss_popup_if_present()
-            self._swipe_vip9_down()
+            self._swipe_tray_down(label="VIP9", times=2)
 
     def reset_cycle(self) -> bool:
         """

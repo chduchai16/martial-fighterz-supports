@@ -144,23 +144,33 @@ class BotConfig:
         "warrior_gem_full_en": IMAGES_DIR / "warrior_gem_full_en.png",
     })
 
-    # Toạ độ 3 dòng VIP7
-    vip7_rows_ratio: List[Tuple[float, float, float, float]] = field(default_factory=lambda: [
+    # Toạ độ các dòng VIP7 ban đầu (Dòng 1, Dòng 2 - không bị che khuất)
+    vip7_initial_rows_ratio: List[Tuple[float, float, float, float]] = field(default_factory=lambda: [
         (0.0088, 0.5850, 0.9824, 0.1360),  # Dòng 1 VIP7
         (0.0088, 0.7240, 0.9824, 0.1360),  # Dòng 2 VIP7
-        (0.0088, 0.8630, 0.9824, 0.1360),  # Dòng 3 VIP7
     ])
 
-    # Toạ độ 3 dòng VIP9 ban đầu (Dòng 1, 2, 3 - không cần cuộn)
+    # Toạ độ ứng viên Dòng 3 của VIP7 sau khi cuộn lên
+    vip7_scrolled_row3_ratio: List[Tuple[float, float, float, float]] = field(default_factory=lambda: [
+        (0.0088, 0.7708, 0.9824, 0.1365),  # Dòng 3 VIP7 sau khi cuộn kịch sàn (y=1480, h=262)
+        (0.0088, 0.7240, 0.9824, 0.1360),  # Dòng 3 VIP7 sau khi cuộn 1 nấc (y=1390, h=261)
+    ])
+
+    # Toạ độ các dòng VIP9 ban đầu (Dòng 1, Dòng 2 - không bị che khuất)
     vip9_initial_rows_ratio: List[Tuple[float, float, float, float]] = field(default_factory=lambda: [
         (0.0088, 0.5850, 0.9824, 0.1360),  # Dòng 1 VIP9
         (0.0088, 0.7240, 0.9824, 0.1360),  # Dòng 2 VIP9
-        (0.0088, 0.8630, 0.9824, 0.1360),  # Dòng 3 VIP9 (chưa cuộn)
     ])
 
-    # Toạ độ duy nhất cho DÒNG 4 VIP9 sau khi cuộn lên hết cỡ chạm đáy
-    vip9_scrolled_rows_ratio: List[Tuple[float, float, float, float]] = field(default_factory=lambda: [
-        (0.0088, 0.7708, 0.9824, 0.1365),  # Dòng 4 VIP9 sau khi cuộn lên (y=1480, h=262)
+    # Toạ độ ứng viên Dòng 3 của VIP9 sau khi cuộn lần 1
+    vip9_scrolled_row3_ratio: List[Tuple[float, float, float, float]] = field(default_factory=lambda: [
+        (0.0088, 0.6344, 0.9824, 0.1365),  # Dòng 3 VIP9 khi kịch sàn (y=1218, h=262)
+        (0.0088, 0.7240, 0.9824, 0.1360),  # Dòng 3 VIP9 khi cuộn 1 nấc (y=1390, h=261)
+    ])
+
+    # Toạ độ ứng viên Dòng 4 của VIP9 sau khi cuộn lần 2 (chạm đáy)
+    vip9_scrolled_row4_ratio: List[Tuple[float, float, float, float]] = field(default_factory=lambda: [
+        (0.0088, 0.7708, 0.9824, 0.1365),  # Dòng 4 VIP9 sau khi cuộn kịch sàn (y=1480, h=262)
     ])
 
     # Toạ độ vuốt cuộn nằm an toàn bên trong khay item (tránh thanh điều hướng Home/Adventure ở đáy)
@@ -170,7 +180,7 @@ class BotConfig:
     swipe_vip9_end_ratio: Tuple[float, float] = (0.40, 0.60)
 
     @property
-    def vip7_rows(self) -> List[Rect]:
+    def vip7_initial_rows(self) -> List[Rect]:
         return [
             Rect(
                 x=int(r[0] * self.target_width),
@@ -178,7 +188,19 @@ class BotConfig:
                 w=int(r[2] * self.target_width),
                 h=int(r[3] * self.target_height),
             )
-            for r in self.vip7_rows_ratio
+            for r in self.vip7_initial_rows_ratio
+        ]
+
+    @property
+    def vip7_scrolled_row3_candidates(self) -> List[Rect]:
+        return [
+            Rect(
+                x=int(r[0] * self.target_width),
+                y=int(r[1] * self.target_height),
+                w=int(r[2] * self.target_width),
+                h=int(r[3] * self.target_height),
+            )
+            for r in self.vip7_scrolled_row3_ratio
         ]
 
     @property
@@ -194,8 +216,7 @@ class BotConfig:
         ]
 
     @property
-    def vip9_scrolled_rows(self) -> List[Rect]:
-        """Danh sách chứa duy nhất Dòng 4 của VIP9 sau khi cuộn lên."""
+    def vip9_scrolled_row3_candidates(self) -> List[Rect]:
         return [
             Rect(
                 x=int(r[0] * self.target_width),
@@ -203,8 +224,29 @@ class BotConfig:
                 w=int(r[2] * self.target_width),
                 h=int(r[3] * self.target_height),
             )
-            for r in self.vip9_scrolled_rows_ratio
+            for r in self.vip9_scrolled_row3_ratio
         ]
+
+    @property
+    def vip9_scrolled_row4_candidates(self) -> List[Rect]:
+        return [
+            Rect(
+                x=int(r[0] * self.target_width),
+                y=int(r[1] * self.target_height),
+                w=int(r[2] * self.target_width),
+                h=int(r[3] * self.target_height),
+            )
+            for r in self.vip9_scrolled_row4_ratio
+        ]
+
+    # Thuộc tính tương thích ngược
+    @property
+    def vip7_rows(self) -> List[Rect]:
+        return self.vip7_initial_rows
+
+    @property
+    def vip9_scrolled_rows(self) -> List[Rect]:
+        return self.vip9_scrolled_row4_candidates
 
     # Toạ độ click trực tiếp dự phòng
     @property
