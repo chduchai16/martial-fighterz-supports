@@ -14,8 +14,12 @@ import numpy as np
 ROOT_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT_DIR))
 
-from config import IMAGES_DIR
-from coordinates import coords
+try:
+    from src.core.config import IMAGES_DIR
+    from src.core.coordinates import coords
+except ImportError:
+    from config import IMAGES_DIR
+    from coordinates import coords
 
 
 class RegionPicker:

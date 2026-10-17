@@ -13,7 +13,10 @@ import numpy as np
 ROOT_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT_DIR))
 
-from config import DEBUG_DIR, IMAGES_DIR
+try:
+    from src.core.config import DEBUG_DIR, IMAGES_DIR
+except ImportError:
+    from config import DEBUG_DIR, IMAGES_DIR
 
 
 def capture_screenshot(serial: str = None, save_dir: Path = IMAGES_DIR, filename: str = None):

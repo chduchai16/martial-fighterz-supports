@@ -56,6 +56,14 @@ class ModernBotApp(ctk.CTk):
         self.geometry("1180x730")
         self.minsize(980, 620)
 
+        # Tự động mở toàn màn hình (phóng to cực đại cửa sổ) ngay khi khởi động
+        self.state("zoomed")
+        self.after(50, lambda: self.state("zoomed"))
+
+        # Phím tắt F11 chuyển đổi chế độ toàn màn hình tuyệt đối (Borderless Fullscreen), Esc để thoát
+        self.bind("<F11>", self._toggle_fullscreen)
+        self.bind("<Escape>", lambda event: self.attributes("-fullscreen", False))
+
         # Quản lý luồng worker
         self.bot_instance: Optional[GameBot] = None
         self.worker_thread: Optional[threading.Thread] = None
@@ -449,6 +457,8 @@ class ModernBotApp(ctk.CTk):
             warn_color = "#f59e0b"
             error_color = "#ef4444"
             debug_color = "#38bdf8"
+            diamond_color = "#38bdf8"  # Xanh dương cyan rực rỡ nổi bật
+            cycle_color = "#34d399"    # Xanh ngọc lục bảo rực rỡ nổi bật
         else:
             # Light theme
             bg_color = "#ffffff"
@@ -458,6 +468,8 @@ class ModernBotApp(ctk.CTk):
             warn_color = "#d97706"
             error_color = "#dc2626"
             debug_color = "#0284c7"
+            diamond_color = "#0284c7"  # Deep cyan xanh biển đậm nét
+            cycle_color = "#15803d"    # Deep green xanh lá đậm nét
 
         self.txt_log.configure(
             bg=bg_color,
@@ -472,6 +484,12 @@ class ModernBotApp(ctk.CTk):
         self.txt_log.tag_config("CRITICAL", foreground=error_color)
         self.txt_log.tag_config("DEBUG", foreground=debug_color)
 
+        # Tags in đậm đặc biệt: Tìm thấy Kim Cương & Kết thúc vòng lặp
+        self.txt_log.tag_config("DIAMOND_BOLD", font=("Consolas", 11, "bold"), foreground=diamond_color)
+        self.txt_log.tag_config("CYCLE_BOLD", font=("Consolas", 11, "bold"), foreground=cycle_color)
+        self.txt_log.tag_raise("DIAMOND_BOLD")
+        self.txt_log.tag_raise("CYCLE_BOLD")
+
     def _setup_logging(self):
         queue_handler = QueueLogHandler(self.log_queue)
         formatter = logging.Formatter("%(asctime)s [%(levelname)s] [%(name)s] %(message)s", "%H:%M:%S")
@@ -481,24 +499,48 @@ class ModernBotApp(ctk.CTk):
         root_logger.setLevel(logging.INFO)
         root_logger.addHandler(queue_handler)
 
+    MAX_LOG_LINES = 200
+
+    def _get_log_tags(self, level: str, msg: str) -> tuple:
+        """Xác định các tag hiển thị: in đậm cho Kim Cương và Hoàn thành vòng."""
+        tags = [level]
+        msg_upper = msg.upper()
+        # In đậm khi tìm thấy Kim Cương (có biểu tượng 💎 hoặc cụm PHÁT HIỆN KIM CƯƠNG)
+        if "💎" in msg and ("KIM CƯƠNG" in msg_upper or "PHÁT HIỆN" in msg_upper):
+            tags.append("DIAMOND_BOLD")
+        # In đậm khi hoàn thành/kết thúc vòng lặp
+        elif "🏁" in msg or ("HOÀN THÀNH VÒNG" in msg_upper and "TRONG" in msg_upper) or "KẾT THÚC VÒNG" in msg_upper:
+            tags.append("CYCLE_BOLD")
+        return tuple(tags)
+
     def _append_log_line(self, level: str, msg: str):
         self.all_logs.append((level, msg))
+        if len(self.all_logs) > self.MAX_LOG_LINES:
+            self.all_logs = self.all_logs[-self.MAX_LOG_LINES:]
+
         flt = self.log_filter_cb.get()
-        if flt != "TẤT CẢ" and level != flt:
-            return
+        if flt == "TẤT CẢ" or level == flt:
+            tags = self._get_log_tags(level, msg)
+            self.txt_log.insert(tk.END, msg + "\n", tags)
+            line_count = int(float(self.txt_log.index("end-1c").split(".")[0]))
+            if line_count > self.MAX_LOG_LINES:
+                delete_count = line_count - self.MAX_LOG_LINES
+                self.txt_log.delete("1.0", f"{delete_count + 1}.0")
+            if self.autoscroll_switch.get():
+                self.txt_log.see(tk.END)
 
-        self.txt_log.insert(tk.END, msg + "\n", level)
-        if self.autoscroll_switch.get():
-            self.txt_log.see(tk.END)
-
-        self.lbl_log_count.configure(text=f"Tổng: {len(self.all_logs)} dòng log  •  Bộ đệm hoạt động")
+        self.lbl_log_count.configure(text=f"Tổng: {len(self.all_logs)}/{self.MAX_LOG_LINES} log gần nhất  •  Bộ đệm tối ưu")
 
     def _refresh_filtered_logs(self):
         self.txt_log.delete("1.0", tk.END)
         flt = self.log_filter_cb.get()
-        for level, msg in self.all_logs:
-            if flt == "TẤT CẢ" or level == flt:
-                self.txt_log.insert(tk.END, msg + "\n", level)
+        filtered = [
+            (level, msg) for level, msg in self.all_logs
+            if flt == "TẤT CẢ" or level == flt
+        ]
+        for level, msg in filtered[-self.MAX_LOG_LINES:]:
+            tags = self._get_log_tags(level, msg)
+            self.txt_log.insert(tk.END, msg + "\n", tags)
         if self.autoscroll_switch.get():
             self.txt_log.see(tk.END)
 
@@ -621,6 +663,11 @@ class ModernBotApp(ctk.CTk):
         self.stop_event.set()
         if self.bot_instance:
             self.bot_instance.stop()
+
+    def _toggle_fullscreen(self, event=None):
+        """Bật / Tắt chế độ toàn màn hình không viền khi bấm F11."""
+        is_fullscreen = self.attributes("-fullscreen")
+        self.attributes("-fullscreen", not is_fullscreen)
 
 
 def main():

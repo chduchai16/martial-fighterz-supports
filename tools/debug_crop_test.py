@@ -10,7 +10,10 @@ import numpy as np
 ROOT_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT_DIR))
 
-from config import config, IMAGES_DIR
+try:
+    from src.core.config import config, IMAGES_DIR
+except ImportError:
+    from config import config, IMAGES_DIR
 
 # 1. Doc anh live da chup
 SRC = ROOT_DIR / "sample_images" / "live_debug.png"

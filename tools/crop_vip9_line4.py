@@ -16,9 +16,14 @@ if str(BASE_DIR) not in sys.path:
 import cv2
 import numpy as np
 
-from capture import FastCapture
-from config import config
-from vision import VisionEngine
+try:
+    from src.core.capture import FastCapture
+    from src.core.config import config
+    from src.core.vision import VisionEngine
+except ImportError:
+    from capture import FastCapture
+    from config import config
+    from vision import VisionEngine
 
 
 def main():

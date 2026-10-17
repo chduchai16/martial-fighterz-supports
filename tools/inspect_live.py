@@ -11,8 +11,12 @@ import numpy as np
 ROOT_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT_DIR))
 
-from capture import FastCapture
-from config import DEBUG_DIR, IMAGES_DIR
+try:
+    from src.core.capture import FastCapture
+    from src.core.config import DEBUG_DIR, IMAGES_DIR
+except ImportError:
+    from capture import FastCapture
+    from config import DEBUG_DIR, IMAGES_DIR
 
 print("\n--- Đang chụp màn hình thực tế từ MuMu Player qua ADB ---")
 cap = FastCapture()

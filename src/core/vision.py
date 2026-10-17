@@ -11,7 +11,10 @@ from typing import Dict, List, Optional, Tuple, Union
 import cv2
 import numpy as np
 
-from config import DEBUG_DIR, Rect
+try:
+    from src.core.config import DEBUG_DIR, Rect
+except ImportError:
+    from .config import DEBUG_DIR, Rect
 
 logger = logging.getLogger("GameBot.Vision")
 
@@ -102,7 +105,7 @@ class VisionEngine:
 
         # Thử nghiệm các mức scale lân cận để đạt độ khớp cao nhất
         scales_to_try = [scale, scale * 0.95, scale * 1.05]
-        best_res = MatchResult(found=False, confidence=0.0)
+        best_res = MatchResult(found=False, confidence=-1.0)
 
         offset_x, offset_y = 0, 0
         search_area = frame
@@ -140,6 +143,9 @@ class VisionEngine:
                     h=t_h
                 )
 
+        if best_res.confidence < 0:
+            best_res.confidence = 0.0
+
         return best_res
 
     def check_row_for_diamond(
@@ -150,21 +156,15 @@ class VisionEngine:
     ) -> MatchResult:
         """
         Kiểm tra một dòng cụ thể xem có chứa Kim Cương hay không.
-        So khớp với cả mẫu 'kim_cuong_inner' và 'kim_cuong' để đạt điểm nhận diện cao nhất.
+        Sử dụng DUY NHẤT một mẫu chuẩn 'kim_cuong' (kim_cuong_icon.png) theo yêu cầu.
         """
-        best_match = MatchResult(found=False, confidence=0.0)
-        for t_key in ["kim_cuong_clean_en", "kim_cuong_inner", "kim_cuong"]:
-            match = self.find_template(
-                frame=frame,
-                template_key_or_path=t_key,
-                threshold=0.0,
-                roi=row_roi
-            )
-            if match.confidence > best_match.confidence:
-                best_match = match
-
-        best_match.found = (best_match.confidence >= min_threshold)
-        return best_match
+        match = self.find_template(
+            frame=frame,
+            template_key_or_path="kim_cuong",
+            threshold=min_threshold,
+            roi=row_roi
+        )
+        return match
 
     def check_row_for_targets(
         self,
@@ -218,10 +218,10 @@ class VisionEngine:
         """
         Quét tất cả các dòng (ROIs), so khớp template và trả về dòng có điểm cao nhất.
         """
-        # Nếu đang tìm kim cương, thử cả cụm kim cương inner lẫn icon đầy đủ
+        # Sử dụng duy nhất mẫu 'kim_cuong'
         template_keys = [template_key_or_path]
         if str(template_key_or_path) == "kim_cuong":
-            template_keys = ["kim_cuong_clean_en", "kim_cuong_inner", "kim_cuong"]
+            template_keys = ["kim_cuong"]
 
         best_overall_idx = None
         best_overall_match = None

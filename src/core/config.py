@@ -11,12 +11,16 @@ def _resolve_base_dir() -> Path:
     """
     Trả về thư mục gốc chứa images/, assets/ ... (read-only bundled data).
     - PyInstaller 6.x: data files nằm trong sys._MEIPASS (_internal/).
-    - Dev mode (src/core): tính ngược 3 cấp để về gốc dự án.
+    - Dev mode:        tìm thư mục gốc chứa images/ hoặc assets/.
     """
     if getattr(sys, 'frozen', False):
         return Path(sys._MEIPASS)  # type: ignore[attr-defined]
-    else:
-        return Path(__file__).resolve().parent.parent.parent
+    
+    curr = Path(__file__).resolve().parent
+    for p in [curr, curr.parent, curr.parent.parent]:
+        if ((p / "images").exists() and any((p / "images").iterdir())) or (p / "assets" / "templates").exists():
+            return p
+    return curr
 
 
 def _resolve_writable_dir() -> Path:
@@ -26,23 +30,34 @@ def _resolve_writable_dir() -> Path:
     """
     if getattr(sys, 'frozen', False):
         return Path(sys.executable).resolve().parent
-    else:
-        return Path(__file__).resolve().parent.parent.parent
+    
+    curr = Path(__file__).resolve().parent
+    for p in [curr, curr.parent, curr.parent.parent]:
+        if (p / "main.py").exists() or (p / "gui_app.py").exists():
+            return p
+    return curr
 
 
 # Thư mục gốc dự án (bundled assets)
 BASE_DIR = _resolve_base_dir()
 # Thư mục có thể ghi (logs, debug) - cạnh exe khi frozen
 WRITABLE_DIR = _resolve_writable_dir()
-# Ưu tiên thư mục assets/templates nếu có, fallback về images/
-IMAGES_DIR = BASE_DIR / "assets" / "templates" if (BASE_DIR / "assets" / "templates").exists() else BASE_DIR / "images"
+
+def _resolve_images_dir(base: Path) -> Path:
+    img_dir = base / "images"
+    tpl_dir = base / "assets" / "templates"
+    if img_dir.exists() and any(img_dir.iterdir()):
+        return img_dir
+    if tpl_dir.exists():
+        return tpl_dir
+    return img_dir
+
+IMAGES_DIR = _resolve_images_dir(BASE_DIR)
 DEBUG_DIR = WRITABLE_DIR / "debug_dumps"
 LOGS_DIR = WRITABLE_DIR / "logs"
 
-IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 DEBUG_DIR.mkdir(parents=True, exist_ok=True)
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
-
 
 
 @dataclass
@@ -90,7 +105,7 @@ class BotConfig:
     phuc_tung_threshold: float = 0.78  # Ngưỡng nhận diện Phục Tùng (C & D)
     button_threshold: float = 0.78
     rut_lui_threshold: float = 0.72  # Ngưỡng nhận diện nút Rút lui (kèm ROI chống nhận diện nhầm)
-    ok_threshold: float = 0.72
+    ok_threshold: float = 0.76
 
     # Chiến lược chọn Even/Odd (Mặc định chọn CHẴN)
     even_odd_strategy: str = "even"
@@ -110,12 +125,12 @@ class BotConfig:
     # Thời gian chờ phản hồi tối ưu (giây) - Phản xạ nhanh, không đứng im vô nghĩa
     api_loading_timeout: float = 15.0   # Chờ API xúc xắc + mở quà tối đa 15s (sẽ click ngay lập tức khi xuất hiện)
     reset_api_timeout: float = 8.0      # Chờ API Reset tối đa 8s
-    wait_after_tap: float = 0.08        # Giảm từ 0.25s -> 0.08s sau cú tap
-    wait_after_vip_open: float = 0.15   # Giảm từ 0.6s -> 0.15s sau khi bấm Tab VIP
-    wait_after_even_odd: float = 0.15   # Giảm từ 0.5s -> 0.15s sau khi bấm Even/Odd
-    wait_after_rut_lui: float = 0.10    # Giảm từ 0.4s -> 0.10s sau khi bấm Rút lui
-    wait_after_reset: float = 0.50      # Giảm từ 1.0s -> 0.50s sau khi bấm Reset
-    wait_after_scroll: float = 0.40     # Đợi hoạt ảnh cuộn trang ổn định trước khi chụp ảnh
+    wait_after_tap: float = 0.04        # Giảm còn 40ms
+    wait_after_vip_open: float = 0.25   # Đợi 250ms cho tab VIP chuyển cảnh ổn định
+    wait_after_even_odd: float = 0.04   # Giảm còn 40ms sau khi bấm Even/Odd
+    wait_after_rut_lui: float = 0.05    # Giảm còn 50ms sau khi bấm Rút lui
+    wait_after_reset: float = 0.20      # Giảm còn 200ms sau khi bấm Reset
+    wait_after_scroll: float = 0.35     # Đợi swipe và quán tính cuộn dừng hẳn (350ms)
 
     # Độ lệch pixel ngẫu nhiên khi tap
     tap_jitter_px: int = 4
@@ -144,33 +159,36 @@ class BotConfig:
         "warrior_gem_full_en": IMAGES_DIR / "warrior_gem_full_en.png",
     })
 
-    # Toạ độ các dòng VIP7 ban đầu (Dòng 1, Dòng 2 - không bị che khuất)
+    # Toạ độ Ô THỨ 1 (Min Earning) chuẩn xác ôm trọn khung vật phẩm (230x250 px)
+    # Slot 1: x_ratio = 0.5833 (x=630), w_ratio = 0.2130 (w=230), h_ratio = 0.1302 (h=250)
+    # Dòng 1: y=1110 (ratio 0.5781), Dòng 2: y=1373 (ratio 0.7151)
     vip7_initial_rows_ratio: List[Tuple[float, float, float, float]] = field(default_factory=lambda: [
-        (0.0088, 0.5850, 0.9824, 0.1360),  # Dòng 1 VIP7
-        (0.0088, 0.7240, 0.9824, 0.1360),  # Dòng 2 VIP7
+        (0.5833, 0.5781, 0.2130, 0.1302),  # Ô 1 Dòng 1 VIP7 (x=630, y=1110, w=230, h=250) -> Kim Cương (conf >= 0.88)
+        (0.5833, 0.7151, 0.2130, 0.1302),  # Ô 1 Dòng 2 VIP7 (x=630, y=1373, w=230, h=250) -> Kim Cương (conf >= 0.88)
     ])
 
-    # Toạ độ ứng viên Dòng 3 của VIP7 sau khi cuộn lên
+    # Toạ độ Ô THỨ 1 Dòng 3 của VIP7 sau khi cuộn lên
     vip7_scrolled_row3_ratio: List[Tuple[float, float, float, float]] = field(default_factory=lambda: [
-        (0.0088, 0.7708, 0.9824, 0.1365),  # Dòng 3 VIP7 sau khi cuộn kịch sàn (y=1480, h=262)
-        (0.0088, 0.7240, 0.9824, 0.1360),  # Dòng 3 VIP7 sau khi cuộn 1 nấc (y=1390, h=261)
+        (0.5833, 0.6354, 0.2130, 0.1302),  # Ứng viên 1 sau cuộn (y=1220)
+        (0.5833, 0.7500, 0.2130, 0.1302),  # Ứng viên 2 sau cuộn (y=1440)
     ])
 
-    # Toạ độ các dòng VIP9 ban đầu (Dòng 1, Dòng 2 - không bị che khuất)
+    # Toạ độ Ô THỨ 1 (Min Earning) của VIP9 ban đầu (Dòng 1, Dòng 2)
     vip9_initial_rows_ratio: List[Tuple[float, float, float, float]] = field(default_factory=lambda: [
-        (0.0088, 0.5850, 0.9824, 0.1360),  # Dòng 1 VIP9
-        (0.0088, 0.7240, 0.9824, 0.1360),  # Dòng 2 VIP9
+        (0.5833, 0.5781, 0.2130, 0.1302),  # Ô 1 Dòng 1 VIP9 (x=630, y=1110, w=230, h=250)
+        (0.5833, 0.7151, 0.2130, 0.1302),  # Ô 1 Dòng 2 VIP9 (x=630, y=1373, w=230, h=250)
     ])
 
-    # Toạ độ ứng viên Dòng 3 của VIP9 sau khi cuộn lần 1
+    # Toạ độ Ô THỨ 1 Dòng 3 của VIP9 sau khi cuộn 1 lần duy nhất
     vip9_scrolled_row3_ratio: List[Tuple[float, float, float, float]] = field(default_factory=lambda: [
-        (0.0088, 0.6344, 0.9824, 0.1365),  # Dòng 3 VIP9 khi kịch sàn (y=1218, h=262)
-        (0.0088, 0.7240, 0.9824, 0.1360),  # Dòng 3 VIP9 khi cuộn 1 nấc (y=1390, h=261)
+        (0.5833, 0.6354, 0.2130, 0.1302),  # Ô 1 Dòng 3 VIP9 (y=1220)
+        (0.5833, 0.6661, 0.2130, 0.1302),  # Dự phòng (y=1279)
     ])
 
-    # Toạ độ ứng viên Dòng 4 của VIP9 sau khi cuộn lần 2 (chạm đáy)
+    # Toạ độ Ô THỨ 1 Dòng 4 của VIP9 sau khi cuộn 1 lần duy nhất
     vip9_scrolled_row4_ratio: List[Tuple[float, float, float, float]] = field(default_factory=lambda: [
-        (0.0088, 0.7708, 0.9824, 0.1365),  # Dòng 4 VIP9 sau khi cuộn kịch sàn (y=1480, h=262)
+        (0.5833, 0.7700, 0.2130, 0.1302),  # Ô 1 Dòng 4 VIP9 (y=1478)
+        (0.5833, 0.8042, 0.2130, 0.1302),  # Dự phòng (y=1544)
     ])
 
     # Toạ độ vuốt cuộn nằm an toàn bên trong khay item (tránh thanh điều hướng Home/Adventure ở đáy)
@@ -277,12 +295,12 @@ class BotConfig:
 
     @property
     def ok_roi(self) -> Rect:
-        """Vùng xuất hiện nút OK (ở nửa dưới màn hình dọc theo trục Y từ 55% đến 91%, bao quát cả popup mới lẫn popup Warrior Gem/cũ)."""
+        """Vùng xuất hiện nút OK trên popup cuộn thư / Warrior Gem (Y từ 60% đến 76%, tránh đáy màn hình)."""
         return Rect(
-            x=int(0.15 * self.target_width),
-            y=int(0.55 * self.target_height),
-            w=int(0.70 * self.target_width),
-            h=int(0.36 * self.target_height)
+            x=int(0.20 * self.target_width),
+            y=int(0.60 * self.target_height),
+            w=int(0.60 * self.target_width),
+            h=int(0.16 * self.target_height)
         )
 
     @property

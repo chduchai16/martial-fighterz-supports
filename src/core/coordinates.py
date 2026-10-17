@@ -6,7 +6,10 @@ import json
 from pathlib import Path
 from typing import Dict, Tuple
 
-from config import Rect
+try:
+    from src.core.config import Rect
+except ImportError:
+    from .config import Rect
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 COORD_FILE = (
