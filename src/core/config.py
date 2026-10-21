@@ -168,9 +168,11 @@ class BotConfig:
     ])
 
     # Toạ độ Ô THỨ 1 Dòng 3 của VIP7 sau khi cuộn lên
+    # CHÚ Ý: Sau khi cuộn, Dòng 2 bị trôi lên trên (y ≈ 1220, cy ≈ 1343).
+    # Dòng 3 THỰC SỰ mới trồi lên ở vị trí đáy (y ≈ 1490 -> 1550, cy ≈ 1620 -> 1675).
     vip7_scrolled_row3_ratio: List[Tuple[float, float, float, float]] = field(default_factory=lambda: [
-        (0.5833, 0.6354, 0.2130, 0.1302),  # Ứng viên 1 sau cuộn (y=1220)
-        (0.5833, 0.7500, 0.2130, 0.1302),  # Ứng viên 2 sau cuộn (y=1440)
+        (0.5833, 0.7760, 0.2130, 0.1302),  # Ô 1 Dòng 3 VIP7 thực sự sau cuộn (y=1490, cy=1615)
+        (0.5833, 0.8042, 0.2130, 0.1302),  # Dự phòng vị trí cuộn sâu hơn (y=1544, cy=1669)
     ])
 
     # Toạ độ Ô THỨ 1 (Min Earning) của VIP9 ban đầu (Dòng 1, Dòng 2)
@@ -295,12 +297,12 @@ class BotConfig:
 
     @property
     def ok_roi(self) -> Rect:
-        """Vùng xuất hiện nút OK trên popup cuộn thư / Warrior Gem (Y từ 60% đến 76%, tránh đáy màn hình)."""
+        """Vùng xuất hiện nút OK (bao quát cả popup nhỏ y=1334 lẫn popup Arale y=1685, Y từ 62% đến 92%)."""
         return Rect(
             x=int(0.20 * self.target_width),
-            y=int(0.60 * self.target_height),
+            y=int(0.62 * self.target_height),
             w=int(0.60 * self.target_width),
-            h=int(0.16 * self.target_height)
+            h=int(0.30 * self.target_height)
         )
 
     @property

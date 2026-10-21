@@ -15,15 +15,25 @@ import numpy as np
 
 logger = logging.getLogger("GameBot.Capture")
 
+# Cờ ngăn mở cửa sổ cmd đen khi gọi subprocess trong môi trường GUI
+CREATE_NO_WINDOW = 0x08000000
+
 
 def find_adb_executable() -> str:
     """Tự động tìm đường dẫn tới file adb.exe."""
-    # 1. Kiểm tra PATH hệ thống
-    adb_in_path = shutil.which("adb")
-    if adb_in_path:
-        return adb_in_path
+    # 1. Kiểm tra sys._MEIPASS khi chạy EXE PyInstaller
+    import sys
+    if getattr(sys, "frozen", False):
+        meipass = Path(sys._MEIPASS)
+        possible = [
+            meipass / "adbutils" / "binaries" / "adb.exe",
+            meipass / "adb.exe",
+        ]
+        for p in possible:
+            if p.exists():
+                return str(p)
 
-    # 2. Kiểm tra từ thư viện adbutils (luôn có sẵn khi cài pip install adbutils)
+    # 2. Kiểm tra từ thư viện adbutils (khi chạy mã nguồn hoặc nếu adbutils resolve được)
     try:
         import adbutils
         p = adbutils.adb_path()
@@ -32,7 +42,12 @@ def find_adb_executable() -> str:
     except Exception:
         pass
 
-    # 3. Quét các thư mục cài đặt phổ biến của MuMu Player và LDPlayer trên Windows
+    # 3. Kiểm tra PATH hệ thống
+    adb_in_path = shutil.which("adb")
+    if adb_in_path:
+        return adb_in_path
+
+    # 4. Quét các thư mục cài đặt phổ biến của MuMu Player và LDPlayer trên Windows
     candidate_paths = [
         r"C:\Program Files\Netease\MuMuPlayer-12.0\shell\adb.exe",
         r"C:\Program Files\Netease\MuMuPlayerGlobal-12.0\shell\adb.exe",
@@ -68,7 +83,7 @@ class FastCapture:
         if self.device_serial and args and args[0] not in ("devices", "connect", "start-server", "kill-server"):
             cmd.extend(["-s", self.device_serial])
         cmd.extend(args)
-        return subprocess.run(cmd, capture_output=True, timeout=timeout)
+        return subprocess.run(cmd, capture_output=True, timeout=timeout, creationflags=CREATE_NO_WINDOW)
 
     def _get_connected_devices(self) -> List[str]:
         """Lấy danh sách thiết bị ADB đang ở trạng thái 'device'."""
@@ -98,7 +113,8 @@ class FastCapture:
                 stdin=subprocess.PIPE,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
-                bufsize=0  # Không đệm, gửi dữ liệu đi ngay lập tức
+                bufsize=0,  # Không đệm, gửi dữ liệu đi ngay lập tức
+                creationflags=CREATE_NO_WINDOW
             )
             logger.info("⚡ Đã kích hoạt kết nối Persistent ADB Shell xuyên suốt (Độ trễ tap < 5ms)!")
         except Exception as e:
@@ -172,7 +188,7 @@ class FastCapture:
                 cmd.extend(["-s", self.device_serial])
             cmd.extend(["exec-out", "screencap"])
 
-            res = subprocess.run(cmd, capture_output=True, timeout=timeout)
+            res = subprocess.run(cmd, capture_output=True, timeout=timeout, creationflags=CREATE_NO_WINDOW)
             if res.returncode == 0 and len(res.stdout) >= 16:
                 raw = res.stdout
                 w = int.from_bytes(raw[0:4], byteorder="little")
@@ -191,7 +207,7 @@ class FastCapture:
                 cmd.extend(["-s", self.device_serial])
             cmd.extend(["exec-out", "screencap", "-p"])
 
-            res = subprocess.run(cmd, capture_output=True, timeout=timeout)
+            res = subprocess.run(cmd, capture_output=True, timeout=timeout, creationflags=CREATE_NO_WINDOW)
             if res.returncode == 0 and res.stdout:
                 img_array = np.frombuffer(res.stdout, dtype=np.uint8)
                 frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)

@@ -231,6 +231,61 @@ class GameBot:
         logger.warning(f"⚠️ Hết thời gian chờ đóng popup '{template_key}'.")
         return False
 
+    def _check_and_dismiss_ok_immediate(self, max_wait_sec: float = 0.5) -> bool:
+        """
+        KIỂM TRA VÀ BẤM NÚT OK TỨC THÌ TẠI MỌI ĐIỂM then chốt (sau click dòng, trước cược EVEN, sau reset):
+        - Nếu phát hiện có nút OK (Cuộn thư hoặc Arale): Bấm ngay lập tức và đảm bảo đóng sạch!
+        - Trả về True nếu có popup OK bị đóng, False nếu màn hình sạch.
+        """
+        t_start = time.perf_counter()
+        dismissed = False
+        while time.perf_counter() - t_start < max_wait_sec:
+            self._check_stop()
+            try:
+                frame = self._wait_for_frame(timeout=0.2)
+                if frame is not None:
+                    match_ok, ok_key = self._find_ok_button(frame)
+                    if match_ok and match_ok.found:
+                        cx, cy = match_ok.center
+                        logger.warning(f"🛑 [Popup OK Phát Hiện] Bấm OK ngay lập tức tại ({cx}, {cy})!")
+                        self._tap(cx, cy, label="Click OK Immediate")
+                        self._confirm_ok_closed(max_wait=1.2)
+                        dismissed = True
+                        break
+            except Exception:
+                pass
+            time.sleep(0.04)
+        return dismissed
+
+    def _confirm_ok_closed(self, max_wait: float = 1.5) -> bool:
+        """
+        GIÁM SÁT VÀ ĐÓNG TRIỆT ĐỂ NÚT OK (Không bị hụt / lệch):
+        Quét trực tiếp qua _find_ok_button.
+        Nếu nút OK vẫn còn trên màn hình sau 0.20s -> tap lại ngay vào tâm hiện tại.
+        """
+        c_start = time.perf_counter()
+        last_retry = c_start
+
+        while time.perf_counter() - c_start < max_wait:
+            try:
+                frame = self._wait_for_frame(timeout=0.2)
+                match_ok, ok_key = self._find_ok_button(frame)
+                if not match_ok or not match_ok.found:
+                    logger.info("✅ Nút/Popup OK đã đóng hoàn toàn khỏi màn hình.")
+                    return True
+
+                # Nếu sau 0.20s nút OK vẫn còn trên màn hình -> tap lại ngay
+                if time.perf_counter() - last_retry > 0.20:
+                    cx, cy = match_ok.center
+                    logger.info(f"🔄 Nút OK vẫn còn tại ({cx}, {cy}) (conf: {match_ok.confidence:.2f}) -> Tap lại chính xác...")
+                    self._tap(cx, cy, label="Retry Click OK")
+                    last_retry = time.perf_counter()
+            except Exception:
+                pass
+            time.sleep(0.02)
+
+        return True
+
     def wait_for_template(
         self,
         template_key: str,
@@ -285,12 +340,12 @@ class GameBot:
 
     def _find_ok_button(self, frame: np.ndarray) -> Tuple[Optional[MatchResult], str]:
         """
-        Tìm nút OK trên popup cuộn thư, tự động hỗ trợ cả giao diện mới ('ok_btn') và giao diện cũ ('ok_btn_vi').
-        Ưu tiên ok_btn_vi (nút màu cam có hoa văn mây) trong vùng ok_roi chính xác.
+        Tìm nút OK trên popup (Cuộn thư hoặc Arale/Warrior Gem).
+        Dùng template matching chuẩn với ngưỡng 0.60 (nhận diện tốt cả khi popup vừa nở to).
         """
-        for key in ["ok_btn_vi", "ok_btn"]:
+        for key in ["ok_btn", "ok_btn_vi"]:
             match = self.vision.find_template(
-                frame, key, threshold=self.cfg.ok_threshold, roi=self.cfg.ok_roi
+                frame, key, threshold=0.60, roi=self.cfg.ok_roi
             )
             if match.found:
                 return match, key
@@ -320,10 +375,10 @@ class GameBot:
                 popup_label = "Warrior Gem" if p_type == "WARRIOR_GEM" else "Hết lượt / Vật phẩm"
                 logger.info(f"🔔 [Popup {popup_label}] Đang xuất hiện tại ({cx}, {cy}) -> Bấm OK!")
                 self._tap(cx, cy, label=f"Click OK ({popup_label})")
-                self.capture.tap(cx, cy, jitter_px=2)
+                self._confirm_ok_closed(max_wait=1.2)
                 dismissed_any = True
                 t_start = time.perf_counter()
-                time.sleep(0.15)
+                time.sleep(0.25)
                 continue
 
             # 2. Kiểm tra nút Rút lui / Withdraw (Song ngữ Việt - Anh)
@@ -333,10 +388,10 @@ class GameBot:
                 btn_name = "Rút lui" if btn_key == "rut_lui_btn" else "Withdraw"
                 logger.info(f"🔔 [Popup {btn_name}] Đang xuất hiện tại ({cx}, {cy}) -> Bấm {btn_name}!")
                 self._tap(cx, cy, label=f"Click {btn_name}")
-                self.capture.tap(cx, cy, jitter_px=2)
+                self._confirm_button_closed(btn_key, threshold=self.cfg.rut_lui_threshold, roi=self.cfg.rut_lui_roi, tap_pos=(cx, cy), max_wait=1.2)
                 dismissed_any = True
                 t_start = time.perf_counter()
-                time.sleep(0.15)
+                time.sleep(0.25)
                 continue
 
             # Nếu không thấy popup nào xuất hiện -> màn hình sạch, thoát ngay lập tức!
@@ -354,7 +409,8 @@ class GameBot:
                 lbl = "Warrior Gem" if p_type == "WARRIOR_GEM" else "Popup OK"
                 logger.info(f"🔔 [{lbl}] Đang xuất hiện tại ({cx}, {cy}) -> Bấm OK!")
                 self._tap(cx, cy, label=f"Click OK ({lbl})")
-                self.capture.tap(cx, cy, jitter_px=2)
+                self._confirm_ok_closed(max_wait=1.2)
+                time.sleep(0.35)
                 return True
 
             match_btn, btn_key = self._find_reward_button(frame)
@@ -363,7 +419,8 @@ class GameBot:
                 btn_name = "Rút lui" if btn_key == "rut_lui_btn" else "Withdraw"
                 logger.info(f"🔔 [{btn_name}] Đang xuất hiện tại ({cx}, {cy}) -> Bấm {btn_name}!")
                 self._tap(cx, cy, label=f"Click {btn_name}")
-                self.capture.tap(cx, cy, jitter_px=2)
+                self._confirm_button_closed(btn_key, threshold=self.cfg.rut_lui_threshold, roi=self.cfg.rut_lui_roi, tap_pos=(cx, cy), max_wait=1.2)
+                time.sleep(0.35)
                 return True
 
             return False
@@ -373,18 +430,17 @@ class GameBot:
     # ==================== CÁC STATE CHI TIẾT ====================
 
     def enter_vip_section(self, vip_type: str = "vip7") -> bool:
-        """Chuyển vào Tab 3 (VIP7) hoặc Tab 4 (VIP9) tức thì bằng toạ độ cố định qua Persistent Shell."""
+        """Chuyển vào Tab VIP7 hoặc Tab VIP9 tức thì bằng toạ độ cố định qua Persistent Shell."""
         self._check_stop()
-        if getattr(self, "active_tab", None) == vip_type:
-            logger.info(f"=== Đang ở sẵn Tab {vip_type.upper()} -> Không cần bấm chuyển tab ===")
-            return True
-
         logger.info(f"=== [STATE] Vào Tab {vip_type.upper()} ===")
         pos = self.cfg.vip7_tab_pos if vip_type == "vip7" else self.cfg.vip9_tab_pos
-        # Bấm Tab ngay lập tức qua Persistent Shell (<5ms)
+        # Luôn bấm chọn Tab tường minh để tránh lệch state giữa game và bot
         self._tap(pos[0], pos[1], label=f"Click Tab {vip_type.upper()}")
         time.sleep(self.cfg.wait_after_vip_open)
         self.active_tab = vip_type
+
+        # Dọn sạch triệt để mọi popup có thể nổ ra khi chuyển tab (như popup Arale/hết lượt vòng cũ)
+        self.wait_and_dismiss_all_popups(max_wait_sec=0.8)
         return True
 
     def choose_even_odd(self, timeout: float = 0.0) -> bool:
@@ -413,21 +469,22 @@ class GameBot:
 
     def wait_and_handle_reward_popup(self, max_wait_sec: Optional[float] = None) -> str:
         """
-        THEO DÕI VÀ NHẬN QUÀ:
-        Quét màn hình liên tục chờ máy chủ trả kết quả:
-        - Xuất hiện nút [Rút lui] / [Withdraw] -> Bấm nhận quà và kết thúc lượt.
-        - Xuất hiện popup [OK] (Warrior Gem hoặc Hết lượt) -> Bấm OK xử lý.
-        Tuyệt đối không dùng luồng spam click mù quáng.
+        THEO DÕI VÀ GIẢI QUYẾT TOÀN BỘ POPUP SAU KHI CƯỢC:
+        - Quét màn hình thời gian thực:
+          + Thấy bất kỳ nút [OK] nào (hết lượt, thiếu đồ...) -> Bấm OK ngay tại toạ độ tìm thấy, báo OUT_OF_ITEMS để chuyển sang dòng khác.
+          + Thấy nút [Rút lui] / [Withdraw] -> Bấm nhận quà.
+        - Hoàn toàn KHÔNG spam tap mù vào toạ độ dòng item (538, 1217).
+        - Bỏ qua hoạt ảnh bằng cú tap tại vùng trung tâm bàn cờ an toàn (y=750).
         """
         wait_limit = max_wait_sec or self.cfg.api_loading_timeout
         t_start = time.perf_counter()
-        logger.info("⏳ Đang theo dõi màn hình chờ nút Rút lui / Popup nhận quà...")
+        logger.info("⏳ Đang theo dõi và xử lý popup (OK / Rút lui / Withdraw)...")
 
         last_skip_tap = 0.0
         while time.perf_counter() - t_start < wait_limit:
             self._check_stop()
             try:
-                frame = self._wait_for_frame(timeout=0.4)
+                frame = self._wait_for_frame(timeout=1.0)
             except BotStoppedException:
                 raise
             except Exception:
@@ -435,37 +492,31 @@ class GameBot:
 
             elapsed = time.perf_counter() - t_start
 
-            # 1. Kiểm tra nếu xuất hiện nút [Rút lui] / [Withdraw] (Song ngữ Việt - Anh)
+            # 1. Thấy nút OK ở đâu bấm ngay ở đó -> Báo OUT_OF_ITEMS để qua khay/dòng khác
+            match_ok, ok_key = self._find_ok_button(frame)
+            if match_ok and match_ok.found:
+                cx, cy = match_ok.center
+                logger.info(f"⚠️ [Popup OK] Xuất hiện sau {elapsed:.2f}s tại ({cx}, {cy}) -> Bấm OK và chuyển dòng khác!")
+                self._tap(cx, cy, label="Click OK")
+                time.sleep(0.18)
+                return "OUT_OF_ITEMS"
+
+            # 2. Xử lý nút [Rút lui] / [Withdraw] (Song ngữ)
             match_btn, btn_key = self._find_reward_button(frame)
             if match_btn and match_btn.found:
                 cx, cy = match_btn.center
                 btn_name = "Rút lui" if btn_key == "rut_lui_btn" else "Withdraw"
-                logger.info(f"🎉 [Nhận quà] Màn hình đã xuất hiện nút '{btn_name}' sau {elapsed:.2f}s (conf: {match_btn.confidence:.2f}) -> Bấm tại ({cx}, {cy})")
+                logger.info(f"🎉 [Nhận quà] Màn hình xuất hiện nút '{btn_name}' sau {elapsed:.2f}s (conf: {match_btn.confidence:.2f}) -> Bấm tại ({cx}, {cy})")
                 self._tap(cx, cy, label=f"Click {btn_name}")
                 time.sleep(0.18)
                 return "SUCCESS"
 
-            # 2. Kiểm tra nếu xuất hiện popup [OK]
-            match_ok, ok_key = self._find_ok_button(frame)
-            if match_ok and match_ok.found:
-                cx, cy = match_ok.center
-                p_type = self.classify_ok_popup(frame)
-                if p_type == "WARRIOR_GEM":
-                    logger.info(f"✨ [Warrior Gem] Popup xuất hiện sau {elapsed:.2f}s! Bấm OK tại ({cx}, {cy}).")
-                    self._tap(cx, cy, label="Click OK (Warrior Gem)")
-                    time.sleep(0.20)
-                    return "WARRIOR_GEM"
-                else:
-                    logger.warning(f"⚠️ [Hết lượt / Hết vật phẩm] Popup xuất hiện sau {elapsed:.2f}s! Bấm OK tại ({cx}, {cy}).")
-                    self._tap(cx, cy, label="Click OK (Het luot doi)")
-                    time.sleep(0.20)
-                    return "OUT_OF_ITEMS"
-
-            # 3. Bỏ qua hoạt ảnh lắc xúc xắc: Tap nhịp nhàng mỗi 0.22s vào toạ độ nút Rút lui (538, 1217)
-            # Vừa skip hoạt ảnh lắc bát vừa bấm nhận quà ngay khoảnh khắc nút vừa xuất hiện!
+            # 3. Skip hoạt ảnh lắc xúc xắc an toàn: Tap tại vùng bàn cờ (540, 750)
             now = time.perf_counter()
+            safe_skip_y = int(0.39 * self.cfg.target_height)
+            safe_skip_x = int(0.50 * self.cfg.target_width)
             if elapsed >= 0.15 and (now - last_skip_tap >= 0.22):
-                self.capture.tap(538, 1217, jitter_px=3)
+                self.capture.tap(safe_skip_x, safe_skip_y, jitter_px=4)
                 last_skip_tap = now
 
             time.sleep(0.015)
@@ -475,69 +526,167 @@ class GameBot:
 
     def play_diamond_row(self, max_rounds: int, vip_name: str = "VIP") -> bool:
         """
-        Chơi các lượt nhận quà cho 1 dòng Kim Cương.
-        - Sau khi bấm vào dòng, chờ kiểm tra xem có popup 'Exchange not available' / 'Not enough items' không.
-        - Nếu có popup lỗi: Bấm OK đóng popup và chuyển sang dòng khác ngay (KHÔNG BẤM CƯỢC).
-        - Nếu hợp lệ: Lần lượt cược từng lượt (chọn Even/Odd -> chờ xuất hiện Rút lui -> bấm Rút lui nhận quà).
+        Chơi các lượt nhận quà cho 1 dòng Kim Cương:
+        1. Bấm chọn dòng để mở bàn cược.
+        2. Chờ phản hồi từ game (0.35s - 0.45s):
+           - Nếu có Popup Cuộn Giấy (Hết đồ / Không thể đổi) -> Bấm OK và THOÁT DÒNG NGAY (không bấm EVEN).
+        3. Chỉ khi dòng hợp lệ -> Mới spam bấm nút EVEN chờ máy chủ xử lý.
+        4. Xử lý chuỗi nhận quà:
+           - Popup Arale hết lượt cược (cy >= 78% h) -> Bấm OK giải phóng.
+           - Nút Withdraw / Rút lui -> Bấm nhận quà (đủ max_rounds lần).
         """
         self._check_stop()
-        logger.info(f"--- [CHƠI DÒNG KIM CƯƠNG ({vip_name})] Chuỗi tối đa {max_rounds} lượt nhận quà ---")
+        logger.info(f"--- [CHƠI DÒNG KIM CƯƠNG ({vip_name})] Kiểm tra dòng và nhận tối đa {max_rounds} lượt ---")
 
-        # 1. Chờ và kiểm tra phản hồi sau khi click vào dòng
-        t_enter = time.perf_counter()
-        while time.perf_counter() - t_enter < 0.35:
+        # 1. Chờ kiểm tra xem có Popup Cuộn Giấy (hết đồ/không thể đổi) nảy lên không
+        # Kiểm tra lặp trong 1.0 giây sau khi click dòng
+        t_enter_wait = time.perf_counter()
+        while time.perf_counter() - t_enter_wait < 1.0:
             self._check_stop()
-            frame_enter = self._wait_for_frame(timeout=0.3)
-            match_ok, ok_key = self._find_ok_button(frame_enter)
+            try:
+                frame_check = self._wait_for_frame(timeout=0.3)
+                if frame_check is not None:
+                    match_ok, ok_key = self._find_ok_button(frame_check)
+                    if match_ok and match_ok.found:
+                        cx, cy = match_ok.center
+                        logger.warning(f"🛑 [Popup Cuộn Giấy Hết Đồ] Phát hiện nút OK tại ({cx}, {cy}) (conf: {match_ok.confidence:.2f}) -> Bấm đóng và bỏ qua dòng!")
+                        self._tap(cx, cy, label="Click OK (Hết Đồ Đổi)")
+                        self._confirm_ok_closed(max_wait=1.2)
+                        return False
+            except Exception:
+                pass
+            time.sleep(0.06)
+
+        # 2. KIỂM TRA ĐIỀU KIỆN TIÊN QUYẾT: BÀN CƯỢC PHẢI THỰC SỰ SẴN SÀNG!
+        # Nếu dòng không đủ item đổi, bàn cược KHÔNG được kích hoạt.
+        try:
+            frame_ready = self._wait_for_frame(timeout=1.5)
+            # Kiểm tra lần chót xem có popup OK che không
+            match_ok_final, _ = self._find_ok_button(frame_ready)
+            if match_ok_final and match_ok_final.found:
+                cx, cy = match_ok_final.center
+                logger.warning(f"🛑 [Popup Cuộn Giấy Hết Đồ] Phát hiện nút OK trước khi cược tại ({cx}, {cy}) -> Bấm đóng và bỏ qua dòng!")
+                self._tap(cx, cy, label="Click OK (Hết Đồ Đổi)")
+                self._confirm_ok_closed(max_wait=1.2)
+                return False
+        except TimeoutError:
+            pass
+
+        # 3. Dòng hợp lệ -> Spam liên tục vào nút EVEN cho đến khi thấy nút Withdraw hoặc Popup OK
+        logger.info(f"🎲 [{vip_name}] Bàn cược hợp lệ -> Bắt đầu cược liên tục EVEN...")
+        even_x, even_y = self.cfg.even_btn_pos
+        t_bet_start = time.perf_counter()
+        bet_count = 0
+
+        while time.perf_counter() - t_bet_start < 5.0:
+            self._check_stop()
+            self._tap(even_x, even_y, label=f"Spam EVEN #{bet_count + 1}")
+            bet_count += 1
+
+            # Lấy frame kiểm tra xem nút Withdraw hoặc Popup OK đã xuất hiện chưa
+            try:
+                frame_check = self._wait_for_frame(timeout=0.3)
+            except Exception:
+                time.sleep(0.05)
+                continue
+
+            # Kiểm tra xem có popup OK xuất hiện chưa
+            match_ok, _ = self._find_ok_button(frame_check)
+            if match_ok and match_ok.found:
+                logger.info("🛑 [Spam EVEN] Phát hiện Popup OK -> Dừng spam EVEN!")
+                break
+
+            # Kiểm tra xem có nút Withdraw / Rút lui xuất hiện chưa
+            match_btn, _ = self._find_reward_button(frame_check)
+            if match_btn and match_btn.found:
+                logger.info(f"🛑 [Spam EVEN] Phát hiện nút Rút lui / Withdraw sau {bet_count} lần bấm EVEN -> Dừng spam!")
+                break
+
+            time.sleep(0.08)
+
+        # 3. Theo dõi nhận quà:
+        # Cơ chế game: Popup Arale "No more attempts" (nút OK) xuất hiện TRƯỚC,
+        # bấm OK xong thì các nút Withdraw (So Lucky) mới xuất hiện SAU để nhận quà!
+        logger.info(f"🎁 [{vip_name}] Bắt đầu chuỗi xử lý Popup OK & Nhận quà (mục tiêu {max_rounds} lần Withdraw)...")
+        withdraw_count = 0
+        t_withdraw_start = time.perf_counter()
+        wait_limit = self.cfg.api_loading_timeout * 2.5
+        consecutive_empty = 0
+
+        while time.perf_counter() - t_withdraw_start < wait_limit:
+            self._check_stop()
+            try:
+                frame = self._wait_for_frame(timeout=1.0)
+            except Exception:
+                continue
+
+            found_any = False
+
+            # A. ƯU TIÊN SỐ 1: Nút [Withdraw] / [Rút lui] (So Lucky nhận thưởng)
+            # Vì khi ăn hết kim cương, game có thể hiện popup "Choose a reward" ở nền dưới,
+            # nhưng nút Withdraw luôn nằm ĐÈ LÊN TRÊN. Phải ưu tiên bấm nhận hết quà trước!
+            match_btn, btn_key = self._find_reward_button(frame)
+            if match_btn and match_btn.found:
+                cx, cy = match_btn.center
+                btn_name = "Rút lui" if btn_key == "rut_lui_btn" else "Withdraw"
+                withdraw_count += 1
+                logger.info(f"🎉 [Nhận quà #{withdraw_count}/{max_rounds}] Bấm {btn_name} tại ({cx}, {cy}) (conf: {match_btn.confidence:.2f})")
+                self._tap(cx, cy, label=f"Click {btn_name}")
+                time.sleep(0.28)
+                found_any = True
+                consecutive_empty = 0
+
+                if withdraw_count >= max_rounds:
+                    logger.info(f"✅ [{vip_name}] Đã nhận đủ {max_rounds}/{max_rounds} lần quà Withdraw!")
+                    time.sleep(0.30)
+                    self.wait_and_dismiss_all_popups(max_wait_sec=1.0)
+                    return True
+                continue
+
+            # B. ƯU TIÊN SỐ 2: Kiểm tra nút OK
+            # - Popup Arale ("You have no more attempts left", cy >= 0.78 * h): Bấm OK giải phóng để nhận tiếp Withdraw!
+            # - Popup Cuộn giấy ("Choose a reward" do hết kim cương bị untarget / "Exchange not available"):
+            #   Nếu chưa nhận được quà nào -> Bấm OK đóng và chuyển dòng.
+            #   Nếu đã nhận được ít nhất 1 lần quà -> Bấm OK giải phóng và đợi thêm chút xem còn quà Withdraw tiếp theo không!
+            match_ok, ok_key = self._find_ok_button(frame)
             if match_ok and match_ok.found:
                 cx, cy = match_ok.center
-                p_type = self.classify_ok_popup(frame_enter)
-                if p_type == "WARRIOR_GEM":
-                    logger.info(f"✨ [Warrior Gem] Màn hình xuất hiện popup Warrior Gem! Bấm OK tại ({cx}, {cy}).")
-                    self._tap(cx, cy, label="Click OK (Warrior Gem)")
-                    time.sleep(0.18)
-                else:  # EXHAUSTED / Hết lượt / Không đủ vật phẩm
-                    logger.warning(f"⚠️ [Không thể đổi] Dòng này hết lượt đổi hoặc không đủ vật phẩm! Bấm OK tại ({cx}, {cy}) để bỏ qua.")
-                    self._tap(cx, cy, label="Click OK (Bỏ qua dòng)")
-                    time.sleep(0.18)
-                    return False
-            # Nếu nút cược EVEN đã xuất hiện -> bàn cược đã sẵn sàng, vào chơi ngay không chờ!
-            match_even = self.vision.find_template(
-                frame_enter, "even_btn", threshold=0.72,
-                roi=Rect(int(0.80 * self.cfg.target_width), int(0.35 * self.cfg.target_height), int(0.18 * self.cfg.target_width), int(0.15 * self.cfg.target_height))
-            )
-            if match_even.found:
-                break
-            time.sleep(0.04)
+                h = self.cfg.target_height
+                is_bottom_ok = (cy >= int(0.78 * h))
 
-        # 2. Bắt đầu vòng lặp các lượt chơi
-        round_idx = 1
-        while round_idx <= max_rounds:
-            self._check_stop()
-            logger.info(f"👉 [{vip_name}] Lượt chơi #{round_idx}/{max_rounds}...")
+                if is_bottom_ok:
+                    logger.info(f"⚠️ [Popup Arale Hết Lượt] cy={cy} -> Bấm OK giải phóng để nhận quà Withdraw...")
+                    self._tap(cx, cy, label="Click OK (Giải phóng)")
+                    time.sleep(0.25)
+                    found_any = True
+                    consecutive_empty = 0
+                    continue
+                else:
+                    # Popup cuộn giấy (Choose a reward / Exchange not available)
+                    logger.warning(f"⚠️ [Popup Cuộn Giấy] cy={cy} -> Bấm OK đóng popup...")
+                    self._tap(cx, cy, label="Click OK")
+                    self._confirm_ok_closed(max_wait=1.2)
+                    time.sleep(0.20)
+                    found_any = True
+                    consecutive_empty = 0
 
-            # Đợi nút cược sẵn sàng rồi bấm cược
-            time.sleep(0.15)
-            self.choose_even_odd()
+                    # Nếu chưa từng nhận quà nào từ dòng này -> Dòng thực sự không đổi được, thoát dòng ngay
+                    if withdraw_count == 0:
+                        logger.info("ℹ️ Dòng này không có quà để nhận. Chuyển dòng khác ngay.")
+                        return True
+                    # Nếu đã nhận quà rồi nhưng dính popup do untarget -> Tiếp tục vòng lặp để nhận nốt quà còn lại nếu có!
+                    continue
 
-            # Chờ phản hồi và bấm nhận quà (Rút lui / OK) - Không dùng spam click mù
-            status = self.wait_and_handle_reward_popup(max_wait_sec=self.cfg.api_loading_timeout)
+            if not found_any:
+                consecutive_empty += 1
+                # Nếu đã từng nhận quà hoặc đã bấm OK và màn hình sạch trong 3 frame liên tiếp -> kết thúc
+                if consecutive_empty >= 5 and withdraw_count > 0:
+                    logger.info(f"✅ [{vip_name}] Màn hình đã sạch hoàn toàn sau khi nhận {withdraw_count} quà.")
+                    break
 
-            if status == "OUT_OF_ITEMS":
-                logger.warning(f"[{vip_name}] Dòng này đã hết lượt ở lượt #{round_idx}. Chuyển sang dòng khác!")
-                return False
-            elif status == "WARRIOR_GEM":
-                logger.info(f"[{vip_name}] Đã đóng popup Warrior Gem, tiếp tục thực hiện lượt #{round_idx}...")
-                continue
-            elif status == "NO_POPUP":
-                logger.info(f"[{vip_name}] Không còn popup nhận quà -> Hoàn tất dòng này.")
-                return True
-            else:  # SUCCESS
-                logger.info(f"✅ [{vip_name}] Hoàn thành xong lượt #{round_idx}/{max_rounds}.")
-                round_idx += 1
-                time.sleep(0.20)
+            time.sleep(0.06)
 
-        logger.info(f"🎉 [{vip_name}] Đã hoàn thành đủ {max_rounds}/{max_rounds} lượt nhận quà.")
+        logger.info(f"🎉 [{vip_name}] Hoàn tất dòng Kim Cương (Đã nhận {withdraw_count} lần quà).")
         return True
 
     def process_vip_section(self, vip_type: str = "vip7"):
@@ -557,14 +706,15 @@ class GameBot:
             self.enter_vip_section("vip7")
             initial_rows = self.cfg.vip7_initial_rows
 
-            # Quét Dòng 1 và Dòng 2 ở vị trí ban đầu (dùng 1 frame duy nhất)
+            # Quét Dòng 1 và Dòng 2 ở vị trí ban đầu
             frame = self._wait_for_frame()
-            if self.dismiss_popup_if_present(frame):
-                time.sleep(0.10)
-                frame = self._wait_for_frame()
 
             for idx, target_row in enumerate(initial_rows):
                 self._check_stop()
+                # Trước khi soi dòng, đảm bảo màn hình sạch không bị popup đè
+                self._check_and_dismiss_ok_immediate(max_wait_sec=0.25)
+                frame = self._wait_for_frame()
+
                 match, target_type = self.vision.check_row_for_targets(
                     frame=frame,
                     row_roi=target_row,
@@ -592,7 +742,9 @@ class GameBot:
             frame = self._wait_for_frame()
 
             w, h = self.cfg.target_width, self.cfg.target_height
-            tray_roi = Rect(x=int(0.5694 * w), y=int(0.65 * h), w=int(0.2130 * w), h=int(0.28 * h))
+            # Vùng khay riêng biệt cho Dòng 3 VIP7 sau khi cuộn (y từ 75% đến 93% chiều cao: 1440 -> 1785)
+            # Tránh quét nhầm lên Dòng 2 phía trên (y ≈ 1220)!
+            tray_roi = Rect(x=int(0.5694 * w), y=int(0.75 * h), w=int(0.2130 * w), h=int(0.18 * h))
 
             match_r3, target_type_r3, roi_r3 = self._check_candidate_rois(
                 frame=frame,
@@ -622,14 +774,15 @@ class GameBot:
             self.enter_vip_section("vip9")
             initial_rows = self.cfg.vip9_initial_rows
 
-            # Quét Dòng 1 và Dòng 2 ở vị trí ban đầu (dùng 1 frame duy nhất)
+            # Quét Dòng 1 và Dòng 2 ở vị trí ban đầu
             frame = self._wait_for_frame()
-            if self.dismiss_popup_if_present(frame):
-                time.sleep(0.10)
-                frame = self._wait_for_frame()
 
             for idx, target_row in enumerate(initial_rows):
                 self._check_stop()
+                # Trước khi soi dòng, đảm bảo màn hình sạch không bị popup đè
+                self._check_and_dismiss_ok_immediate(max_wait_sec=0.25)
+                frame = self._wait_for_frame()
+
                 match, target_type = self.vision.check_row_for_targets(
                     frame=frame,
                     row_roi=target_row,
@@ -721,30 +874,35 @@ class GameBot:
 
     def reset_cycle(self) -> bool:
         """
-        Bấm Refresh/Reset để làm mới vòng lặp.
-        - Bấm trực tiếp toạ độ cố định tại nút Refresh tức thì qua Persistent Shell (<5ms).
-        - Đợi và xử lý triệt để popup Warrior Gem (nếu quay trúng) trước khi kết thúc!
+        Bấm Refresh/Reset để làm mới vòng lặp:
+        - Bấm nút Reset tại toạ độ cố định qua Persistent Shell (<5ms).
+        - Nếu có nổ Popup Warrior Gem / Popup OK: Đảm bảo bấm OK đóng hoàn toàn trước khi cho phép sang vòng mới!
+        - Nếu không có popup thì thoát nhanh, không bị delay.
         """
         self._check_stop()
         logger.info("=== [STATE] Bấm Reset (Refresh) ===")
         cx, cy = self.cfg.reset_btn_pos
         logger.info(f"🔄 Bấm nút Reset tại ({cx}, {cy})")
         self._tap(cx, cy, label="Reset Cycle")
+        time.sleep(0.30)
 
-        # Chờ tối thiểu 0.35s để hoạt ảnh reset / cuộn thư bắt đầu
-        time.sleep(0.35)
-        t_start = time.perf_counter()
-        while time.perf_counter() - t_start < 1.2:
+        # Chờ tối đa 0.6s để bắt và đóng triệt để Popup Warrior Gem nếu có
+        t_check = time.perf_counter()
+        while time.perf_counter() - t_check < 0.6:
             self._check_stop()
             try:
-                frame = self._wait_for_frame(timeout=0.6)
-                if frame is not None and self.dismiss_popup_if_present(frame):
-                    logger.info("✅ Đã xử lý xong popup Warrior Gem sau khi Reset!")
-                    break
+                frame = self._wait_for_frame(timeout=0.4)
+                if frame is not None:
+                    match_ok, _ = self._find_ok_button(frame)
+                    if match_ok and match_ok.found:
+                        ok_cx, ok_cy = match_ok.center
+                        logger.info(f"✨ [Reset] Phát hiện Popup Warrior Gem/OK tại ({ok_cx}, {ok_cy}) -> Bấm đóng ngay lập tức!")
+                        self._tap(ok_cx, ok_cy, label="Click OK (Warrior Gem)")
+                        time.sleep(0.20)
+                        break
             except Exception:
                 pass
-            if time.perf_counter() - t_start >= 0.65:
-                break
+            time.sleep(0.05)
 
         logger.info("✅ Đã làm mới (Reset) xong chu kỳ!")
         return True
@@ -753,43 +911,38 @@ class GameBot:
 
     def run_one_cycle(self) -> bool:
         """
-        Chạy 1 chu kỳ hoàn chỉnh theo cơ chế Đảo chiều thông minh (Alternating Loop):
-        - Nếu đang ở VIP7: VIP7 -> VIP9 -> Reset -> (Ở lại VIP9)
-        - Nếu đang ở VIP9: VIP9 -> VIP7 -> Reset -> (Ở lại VIP7)
-        Tiết kiệm tối đa thao tác chuyển tab.
+        Chạy 1 chu kỳ hoàn chỉnh theo quy trình giữ nguyên Tab sau Reset:
+        - Bắt đầu từ VIP hiện tại (current_vip).
+        - Quét và cược VIP hiện tại.
+        - Chuyển sang VIP còn lại để quét và cược.
+        - Bấm Reset -> Ở NGUYÊN TẠI VIP ĐÓ cho chu kỳ tiếp theo (không nhảy tab vội).
         """
         self._check_stop()
         self.cycle_count += 1
         cycle_start = time.perf_counter()
-        logger.info(f"\n==================== BẮT ĐẦU VÒNG #{self.cycle_count} (Bắt đầu từ {self.current_vip.upper()}) ====================")
+        first_vip = self.current_vip
+        second_vip = "vip9" if first_vip == "vip7" else "vip7"
+
+        logger.info(f"\n==================== BẮT ĐẦU VÒNG #{self.cycle_count} ({first_vip.upper()} -> {second_vip.upper()} -> RESET) ====================")
 
         try:
-            # 0. Tự động đóng popup nếu có kẹt từ trước (như Warrior Gem)
-            self.dismiss_popup_if_present()
+            # 1. Quét và cược VIP hiện tại đang đứng
+            self.process_vip_section(first_vip)
             self._check_stop()
 
-            if self.current_vip == "vip7":
-                # Flow: VIP7 -> VIP9 -> Reset
-                self.process_vip_section("vip7")
-                self._check_stop()
-                self.process_vip_section("vip9")
-                self._check_stop()
-                self.reset_cycle()
-                # Sau khi Reset ở VIP9, vòng tiếp theo sẽ ở luôn VIP9 chơi trước!
-                self.current_vip = "vip9"
-            else:
-                # Flow: VIP9 -> VIP7 -> Reset
-                self.process_vip_section("vip9")
-                self._check_stop()
-                self.process_vip_section("vip7")
-                self._check_stop()
-                self.reset_cycle()
-                # Sau khi Reset ở VIP7, vòng tiếp theo sẽ ở luôn VIP7 chơi trước!
-                self.current_vip = "vip7"
+            # 2. Chuyển sang VIP còn lại quét và cược
+            self.process_vip_section(second_vip)
+            self._check_stop()
+
+            # 3. Bấm Reset làm mới chu kỳ
+            self.reset_cycle()
+
+            # Sau khi Reset, game giữ nguyên tab second_vip -> đặt làm tab khởi đầu vòng sau!
+            self.current_vip = second_vip
 
             total_time_sec = time.perf_counter() - cycle_start
             self.success_count += 1
-            logger.info(f"🏁 Hoàn thành vòng #{self.cycle_count} trong {total_time_sec:.2f}s! (Vòng kế tiếp sẽ bắt đầu từ: {self.current_vip.upper()})")
+            logger.info(f"🏁 Hoàn thành vòng #{self.cycle_count} trong {total_time_sec:.2f}s! (Vòng sau ở lại: {self.current_vip.upper()})")
             return True
         except BotStoppedException:
             logger.info("🛑 Bot đã dừng ngay lập tức theo lệnh người dùng.")
