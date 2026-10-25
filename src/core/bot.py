@@ -666,6 +666,10 @@ class GameBot:
                 )
 
                 if match.found:
+                    if self.vision.is_input_zero(frame, target_row):
+                        logger.info(f"⏩ [VIP7] Dòng #{idx + 1} có Kim Cương nhưng hết nguyên liệu (Input = 0) -> Bỏ qua dòng!")
+                        continue
+
                     cx = self.cfg.target_width // 2
                     cy = target_row.center[1]
                     item_label = "Kim Cương" if target_type == "DIAMOND" else "Phục Tùng C (Obedient C)"
@@ -698,12 +702,15 @@ class GameBot:
             )
 
             if match_r3.found and roi_r3:
-                cx = self.cfg.target_width // 2
-                cy = roi_r3.center[1]
-                item_label = "Kim Cương" if target_type_r3 == "DIAMOND" else "Phục Tùng C (Obedient C)"
-                logger.info(f"💎 [VIP7] Phát hiện {item_label} ở DÒNG 3 sau khi cuộn (conf: {match_r3.confidence:.3f}). Bấm tại ({cx}, {cy})")
-                self._tap(cx, cy, label="Click Row 3 (Scrolled)")
-                self.play_diamond_row(max_rounds, vip_name="VIP7")
+                if self.vision.is_input_zero(frame, roi_r3):
+                    logger.info("⏩ [VIP7] Dòng 3 sau khi cuộn có Kim Cương nhưng Input = 0 -> Bỏ qua dòng!")
+                else:
+                    cx = self.cfg.target_width // 2
+                    cy = roi_r3.center[1]
+                    item_label = "Kim Cương" if target_type_r3 == "DIAMOND" else "Phục Tùng C (Obedient C)"
+                    logger.info(f"💎 [VIP7] Phát hiện {item_label} ở DÒNG 3 sau khi cuộn (conf: {match_r3.confidence:.3f}). Bấm tại ({cx}, {cy})")
+                    self._tap(cx, cy, label="Click Row 3 (Scrolled)")
+                    self.play_diamond_row(max_rounds, vip_name="VIP7")
             else:
                 logger.info(f"[VIP7] Dòng 3 không có Kim Cương / Phục Tùng (conf: {match_r3.confidence:.3f}). Bỏ qua.")
 
@@ -739,6 +746,10 @@ class GameBot:
                 )
 
                 if match.found:
+                    if self.vision.is_input_zero(frame, target_row):
+                        logger.info(f"⏩ [VIP9] Dòng #{idx + 1} có Kim Cương nhưng hết nguyên liệu (Input = 0) -> Bỏ qua dòng!")
+                        continue
+
                     cx = self.cfg.target_width // 2
                     cy = target_row.center[1]
                     item_label = "Kim Cương" if target_type == "DIAMOND" else "Phục Tùng C (Obedient C)"
@@ -774,14 +785,17 @@ class GameBot:
             )
 
             if match_r3.found and roi_r3:
-                cx = self.cfg.target_width // 2
-                cy = roi_r3.center[1]
-                item_label = "Kim Cương" if target_type_r3 == "DIAMOND" else "Phục Tùng C (Obedient C)"
-                logger.info(f"💎 [VIP9] Phát hiện {item_label} ở DÒNG 3 sau khi cuộn (conf: {match_r3.confidence:.3f}). Bấm tại ({cx}, {cy})")
-                self._tap(cx, cy, label="Click Row 3 (Scrolled)")
-                self.play_diamond_row(max_rounds, vip_name="VIP9")
-                # Sau khi chơi xong Dòng 3, cập nhật lại frame mới nhất
-                frame = self._wait_for_frame()
+                if self.vision.is_input_zero(frame, roi_r3):
+                    logger.info("⏩ [VIP9] Dòng 3 sau khi cuộn có Kim Cương nhưng Input = 0 -> Bỏ qua dòng!")
+                else:
+                    cx = self.cfg.target_width // 2
+                    cy = roi_r3.center[1]
+                    item_label = "Kim Cương" if target_type_r3 == "DIAMOND" else "Phục Tùng C (Obedient C)"
+                    logger.info(f"💎 [VIP9] Phát hiện {item_label} ở DÒNG 3 sau khi cuộn (conf: {match_r3.confidence:.3f}). Bấm tại ({cx}, {cy})")
+                    self._tap(cx, cy, label="Click Row 3 (Scrolled)")
+                    self.play_diamond_row(max_rounds, vip_name="VIP9")
+                    # Sau khi chơi xong Dòng 3, cập nhật lại frame mới nhất
+                    frame = self._wait_for_frame()
             else:
                 logger.info(f"[VIP9] Dòng 3 không có Kim Cương / Phục Tùng (conf: {match_r3.confidence:.3f}). Bỏ qua.")
 
@@ -807,12 +821,15 @@ class GameBot:
                 logger.debug(f"Lỗi lưu ảnh debug line_4: {e}")
 
             if match_r4.found and roi_r4:
-                cx = self.cfg.target_width // 2
-                cy = roi_r4.center[1]
-                item_label = "Kim Cương" if target_type_r4 == "DIAMOND" else "Phục Tùng C (Obedient C)"
-                logger.info(f"💎 [VIP9] Phát hiện {item_label} ở DÒNG 4 sau khi cuộn (conf: {match_r4.confidence:.3f}). Bấm tại ({cx}, {cy})")
-                self._tap(cx, cy, label="Click Row 4 (Scrolled)")
-                self.play_diamond_row(max_rounds, vip_name="VIP9")
+                if self.vision.is_input_zero(frame, roi_r4):
+                    logger.info("⏩ [VIP9] Dòng 4 sau khi cuộn có Kim Cương nhưng Input = 0 -> Bỏ qua dòng!")
+                else:
+                    cx = self.cfg.target_width // 2
+                    cy = roi_r4.center[1]
+                    item_label = "Kim Cương" if target_type_r4 == "DIAMOND" else "Phục Tùng C (Obedient C)"
+                    logger.info(f"💎 [VIP9] Phát hiện {item_label} ở DÒNG 4 sau khi cuộn (conf: {match_r4.confidence:.3f}). Bấm tại ({cx}, {cy})")
+                    self._tap(cx, cy, label="Click Row 4 (Scrolled)")
+                    self.play_diamond_row(max_rounds, vip_name="VIP9")
             else:
                 logger.info(f"[VIP9] Dòng 4 không có Kim Cương / Phục Tùng (conf: {match_r4.confidence:.3f}). Bỏ qua.")
 

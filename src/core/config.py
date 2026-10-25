@@ -157,6 +157,7 @@ class BotConfig:
         "warrior_gem_text": IMAGES_DIR / "warrior_gem_text.png",
         "warrior_gem_en": IMAGES_DIR / "warrior_gem_en.png",
         "warrior_gem_full_en": IMAGES_DIR / "warrior_gem_full_en.png",
+        "input_zero": IMAGES_DIR / "input_zero.png",
     })
 
     # Toạ độ Ô THỨ 1 (Min Earning) chuẩn xác ôm trọn khung vật phẩm (230x250 px)
@@ -317,6 +318,18 @@ class BotConfig:
     @property
     def reset_btn_pos(self) -> Tuple[int, int]:
         return int(0.135 * self.target_width), int(0.233 * self.target_height)
+
+    def get_input_quantity_roi(self, row_roi: Rect) -> Rect:
+        """
+        Vùng số lượng nguyên liệu đầu vào ở chân avatar bên trái.
+        row_roi là ô phần thưởng bên phải của cùng dòng.
+        """
+        w, h = self.target_width, self.target_height
+        qx = int(0.120 * w)
+        qw = int(0.070 * w)
+        qy = row_roi.y + int(36 * (h / 1920.0))
+        qh = int(44 * (h / 1920.0))
+        return Rect(x=qx, y=qy, w=qw, h=qh)
 
 
 config = BotConfig()
