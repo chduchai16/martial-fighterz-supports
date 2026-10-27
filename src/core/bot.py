@@ -432,10 +432,8 @@ class GameBot:
         """Chuyển vào Tab VIP7 hoặc Tab VIP9 tức thì bằng toạ độ cố định qua Persistent Shell."""
         self._check_stop()
         if self.active_tab == vip_type:
-            logger.info(f"=== [STATE] Đang ở sẵn Tab {vip_type.upper()} -> Bỏ qua click tab ===")
             return True
 
-        logger.info(f"=== [STATE] Vào Tab {vip_type.upper()} ===")
         pos = self.cfg.vip7_tab_pos if vip_type == "vip7" else self.cfg.vip9_tab_pos
         self._tap(pos[0], pos[1], label=f"Click Tab {vip_type.upper()}")
         time.sleep(0.12)
@@ -546,7 +544,7 @@ class GameBot:
                 match_ok, ok_key = self._find_ok_button(frame_check)
                 if match_ok and match_ok.found:
                     cx, cy = match_ok.center
-                    logger.warning(f"🛑 [Popup Cuộn Giấy Hết Đồ] Phát hiện nút OK tại ({cx}, {cy}) (conf: {match_ok.confidence:.2f}) -> Bấm đóng và bỏ qua dòng!")
+                    logger.warning(f"🛑 [Popup Cuộn Giấy] Hết đồ -> Bấm OK ({cx}, {cy})")
                     self._tap(cx, cy, label="Click OK (Hết Đồ Đổi)")
                     self._confirm_ok_closed(max_wait=0.8)
                     return False
@@ -554,13 +552,11 @@ class GameBot:
             pass
 
         # 2. VÒNG LẶP CƯỢC THEO TỪNG LƯỢT CHUẨN XÁC (Không spam mù, không cược lẹm sang dòng khác)
-        logger.info(f"🎲 [{vip_name}] Bắt đầu chuỗi cược {max_rounds} lượt chuẩn xác...")
         even_x, even_y = self.cfg.even_btn_pos
         withdraw_count = 0
 
         for r_idx in range(1, max_rounds + 1):
             self._check_stop()
-            logger.info(f"👉 [{vip_name}] Cược lượt #{r_idx}/{max_rounds}...")
             self._tap(even_x, even_y, label=f"Bet EVEN #{r_idx}")
 
             # Chờ và nhận quà của lượt này (có skip hoạt ảnh an toàn)
@@ -584,9 +580,11 @@ class GameBot:
                     cx, cy = match_btn.center
                     btn_name = "Rút lui" if btn_key == "rut_lui_btn" else "Withdraw"
                     withdraw_count += 1
-                    logger.info(f"🎉 [Nhận quà #{withdraw_count}/{max_rounds}] Bấm {btn_name} tại ({cx}, {cy}) (conf: {match_btn.confidence:.2f})")
+                    logger.info(f"🎉 [{vip_name}] Nhận quà #{withdraw_count}/{max_rounds} ({btn_name})")
                     self._tap(cx, cy, label=f"Click {btn_name}")
-                    time.sleep(0.25)
+                    # Xác nhận nút đóng hoàn toàn, nếu chưa đóng thì tap lại
+                    self._confirm_button_closed(btn_key, threshold=self.cfg.rut_lui_threshold, roi=self.cfg.rut_lui_roi, tap_pos=(cx, cy), max_wait=1.2)
+                    time.sleep(0.15)
                     round_claimed = True
                     break
 
@@ -594,7 +592,7 @@ class GameBot:
                 match_ok, ok_key = self._find_ok_button(f_round)
                 if match_ok and match_ok.found:
                     cx, cy = match_ok.center
-                    logger.warning(f"⚠️ [Popup OK] Xuất hiện tại ({cx}, {cy}) -> Bấm đóng và kết thúc dòng.")
+                    logger.warning(f"⚠️ [{vip_name}] Popup OK -> Bấm đóng và kết thúc dòng.")
                     self._tap(cx, cy, label="Click OK")
                     self._confirm_ok_closed(max_wait=0.8)
                     return True
@@ -609,20 +607,29 @@ class GameBot:
                 time.sleep(0.02)
 
             if not round_claimed:
-                logger.warning(f"⚠️ [{vip_name}] Hết thời gian chờ nhận quà lượt #{r_idx} -> Chuyển dòng tiếp theo.")
+                logger.warning(f"⚠️ [{vip_name}] Hết thời gian chờ quà #{r_idx}")
                 break
 
             time.sleep(0.18)
 
         logger.info(f"🎉 [{vip_name}] Hoàn tất dòng Kim Cương (Đã cược và nhận {withdraw_count}/{max_rounds} lần quà).")
 
-        # CHỐT CHẶN TRIỆT ĐỂ: Dọn sạch mọi modal còn sót lại (nhất là modal "Choose a reward" do untarget)
-        # Bắt buộc màn hình phải sạch bóng trước khi thoát dòng, để lệnh vuốt cuộn hoặc chuyển tab không bị nuốt!
+        # CHỐT CHẶN: Dọn sạch nút Withdraw còn sót hoặc modal OK
         try:
             f_clean = self._wait_for_frame(timeout=0.3)
+            # 1. Nếu còn nút Withdraw sót lại -> bấm nhận nốt
+            m_btn, b_key = self._find_reward_button(f_clean)
+            if m_btn and m_btn.found:
+                cx, cy = m_btn.center
+                b_name = "Rút lui" if b_key == "rut_lui_btn" else "Withdraw"
+                logger.info(f"🎉 [{vip_name}] Nhận quà còn sót ({b_name})")
+                self._tap(cx, cy, label=f"Dismiss Tail {b_name}")
+                self._confirm_button_closed(b_key, threshold=self.cfg.rut_lui_threshold, roi=self.cfg.rut_lui_roi, tap_pos=(cx, cy), max_wait=1.2)
+                f_clean = self._wait_for_frame(timeout=0.3)
+
+            # 2. Nếu còn modal OK -> bấm đóng
             m_ok, _ = self._find_ok_button(f_clean)
             if m_ok and m_ok.found:
-                logger.info(f"🧹 Dọn dẹp dứt điểm modal Choose a reward/OK tại ({m_ok.center[0]}, {m_ok.center[1]})...")
                 self._tap(m_ok.center[0], m_ok.center[1], label="Dismiss Remaining OK")
                 self._confirm_ok_closed(max_wait=0.8)
         except Exception:
@@ -650,7 +657,16 @@ class GameBot:
             # Quét Dòng 1 và Dòng 2 ở vị trí ban đầu (dùng đúng 1 frame duy nhất)
             frame = self._wait_for_frame()
 
-            # KIỂM TRA NGAY TRÊN FRAME ĐẦU TIÊN: Nếu nổ popup Warrior Gem / OK sau Reset -> dập tắt ngay!
+            # KIỂM TRA ĐẦU TAB: Dọn sạch nếu có nút Withdraw kẹt hoặc popup Warrior Gem
+            match_btn_start, btn_key_start = self._find_reward_button(frame)
+            if match_btn_start and match_btn_start.found:
+                cx, cy = match_btn_start.center
+                b_name = "Rút lui" if btn_key_start == "rut_lui_btn" else "Withdraw"
+                logger.info(f"🎉 [VIP7] Nhận quà tồn đọng ({b_name})")
+                self._tap(cx, cy, label=f"Dismiss Initial {b_name}")
+                self._confirm_button_closed(btn_key_start, threshold=self.cfg.rut_lui_threshold, roi=self.cfg.rut_lui_roi, tap_pos=(cx, cy), max_wait=1.2)
+                frame = self._wait_for_frame()
+
             match_ok_start, _ = self._find_ok_button(frame)
             if match_ok_start and match_ok_start.found:
                 ok_x, ok_y = match_ok_start.center
@@ -671,22 +687,18 @@ class GameBot:
 
                 if match.found:
                     if self.vision.is_input_zero(frame, target_row):
-                        logger.info(f"⏩ [VIP7] Dòng #{idx + 1} có Kim Cương nhưng hết nguyên liệu (Input = 0) -> Bỏ qua dòng!")
+                        logger.info(f"⏩ [VIP7] Dòng #{idx + 1} Input = 0 -> Bỏ qua")
                         continue
 
                     cx = self.cfg.target_width // 2
                     cy = target_row.center[1]
-                    item_label = "Kim Cương" if target_type == "DIAMOND" else "Phục Tùng C (Obedient C)"
-                    logger.info(f"💎 [VIP7] Phát hiện {item_label} ở DÒNG #{idx + 1} (conf: {match.confidence:.3f}). Bấm tại ({cx}, {cy})")
+                    logger.info(f"💎 [VIP7] Chọn Dòng #{idx + 1}")
                     self._tap(cx, cy, label=f"Click Center Row #{idx + 1}")
                     self.play_diamond_row(max_rounds, vip_name="VIP7")
                     frame = self._wait_for_frame()
-                else:
-                    logger.info(f"[VIP7] Dòng #{idx + 1} không có Kim Cương / Phục Tùng (conf: {match.confidence:.3f}). Bỏ qua.")
 
             # 2. Xử lý Dòng 3 VIP7: Kéo cuộn lên 1 lần để dòng 3 lộ ra hoàn toàn
             self._check_stop()
-            logger.info("[VIP7] Cuộn khay item lên để kiểm tra Dòng 3...")
             self._swipe_tray_up(label="VIP7")
             self._check_stop()
             frame = self._wait_for_frame()
@@ -707,20 +719,16 @@ class GameBot:
 
             if match_r3.found and roi_r3:
                 if self.vision.is_input_zero(frame, roi_r3):
-                    logger.info("⏩ [VIP7] Dòng 3 sau khi cuộn có Kim Cương nhưng Input = 0 -> Bỏ qua dòng!")
+                    logger.info("⏩ [VIP7] Dòng 3 Input = 0 -> Bỏ qua")
                 else:
                     cx = self.cfg.target_width // 2
                     cy = roi_r3.center[1]
-                    item_label = "Kim Cương" if target_type_r3 == "DIAMOND" else "Phục Tùng C (Obedient C)"
-                    logger.info(f"💎 [VIP7] Phát hiện {item_label} ở DÒNG 3 sau khi cuộn (conf: {match_r3.confidence:.3f}). Bấm tại ({cx}, {cy})")
+                    logger.info("💎 [VIP7] Chọn Dòng 3")
                     self._tap(cx, cy, label="Click Row 3 (Scrolled)")
                     self.play_diamond_row(max_rounds, vip_name="VIP7")
-            else:
-                logger.info(f"[VIP7] Dòng 3 không có Kim Cương / Phục Tùng (conf: {match_r3.confidence:.3f}). Bỏ qua.")
 
             # 3. Kết thúc VIP7 -> Luôn cuộn trả khay item về lại đầu trang
             self._swipe_tray_down(label="VIP7", times=1)
-            logger.info("[VIP7] Đã kiểm tra xong lần lượt tất cả các dòng của VIP7. Chuyển sang VIP9.")
 
         else:
             # 1. Chuyển vào Tab VIP9 1 lần duy nhất từ VIP7
@@ -730,11 +738,20 @@ class GameBot:
             # Quét Dòng 1 và Dòng 2 ở vị trí ban đầu (dùng đúng 1 frame duy nhất)
             frame = self._wait_for_frame()
 
-            # KIỂM TRA NGAY TRÊN FRAME ĐẦU TIÊN: Nếu nổ popup Warrior Gem / OK sau Reset -> dập tắt ngay!
+            # KIỂM TRA ĐẦU TAB: Dọn sạch nếu có nút Withdraw kẹt hoặc popup Warrior Gem
+            match_btn_start, btn_key_start = self._find_reward_button(frame)
+            if match_btn_start and match_btn_start.found:
+                cx, cy = match_btn_start.center
+                b_name = "Rút lui" if btn_key_start == "rut_lui_btn" else "Withdraw"
+                logger.info(f"🎉 [VIP9] Nhận quà tồn đọng ({b_name})")
+                self._tap(cx, cy, label=f"Dismiss Initial {b_name}")
+                self._confirm_button_closed(btn_key_start, threshold=self.cfg.rut_lui_threshold, roi=self.cfg.rut_lui_roi, tap_pos=(cx, cy), max_wait=1.2)
+                frame = self._wait_for_frame()
+
             match_ok_start, _ = self._find_ok_button(frame)
             if match_ok_start and match_ok_start.found:
                 ok_x, ok_y = match_ok_start.center
-                logger.info(f"✨ [VIP9] Phát hiện Popup Warrior Gem/OK tại ({ok_x}, {ok_y}) -> Bấm OK giải phóng ngay!")
+                logger.info(f"✨ [VIP9] Popup Warrior Gem/OK -> Bấm OK ({ok_x}, {ok_y})")
                 self._tap(ok_x, ok_y, label="Dismiss Initial OK")
                 self._confirm_ok_closed(max_wait=0.8)
                 frame = self._wait_for_frame()
@@ -751,23 +768,19 @@ class GameBot:
 
                 if match.found:
                     if self.vision.is_input_zero(frame, target_row):
-                        logger.info(f"⏩ [VIP9] Dòng #{idx + 1} có Kim Cương nhưng hết nguyên liệu (Input = 0) -> Bỏ qua dòng!")
+                        logger.info(f"⏩ [VIP9] Dòng #{idx + 1} Input = 0 -> Bỏ qua")
                         continue
 
                     cx = self.cfg.target_width // 2
                     cy = target_row.center[1]
-                    item_label = "Kim Cương" if target_type == "DIAMOND" else "Phục Tùng C (Obedient C)"
-                    logger.info(f"💎 [VIP9] Phát hiện {item_label} ở DÒNG #{idx + 1} (conf: {match.confidence:.3f}). Bấm tại ({cx}, {cy})")
+                    logger.info(f"💎 [VIP9] Chọn Dòng #{idx + 1}")
                     self._tap(cx, cy, label=f"Click Center Row #{idx + 1}")
                     self.play_diamond_row(max_rounds, vip_name="VIP9")
                     frame = self._wait_for_frame()
-                else:
-                    logger.info(f"[VIP9] Dòng #{idx + 1} không có Kim Cương / Phục Tùng (conf: {match.confidence:.3f}). Bỏ qua.")
 
             # 2. Xử lý Dòng 3 và Dòng 4 VIP9:
             # Cuộn lên 1 LẦN DUY NHẤT để đưa CẢ Dòng 3 và Dòng 4 vào tầm nhìn rõ nét
             self._check_stop()
-            logger.info("[VIP9] Cuộn khay item lên để kiểm tra Dòng 3 và Dòng 4...")
             self._swipe_tray_up(label="VIP9")
             self._check_stop()
             frame = self._wait_for_frame()
@@ -790,23 +803,17 @@ class GameBot:
 
             if match_r3.found and roi_r3:
                 if self.vision.is_input_zero(frame, roi_r3):
-                    logger.info("⏩ [VIP9] Dòng 3 sau khi cuộn có Kim Cương nhưng Input = 0 -> Bỏ qua dòng!")
+                    logger.info("⏩ [VIP9] Dòng 3 Input = 0 -> Bỏ qua")
                 else:
                     cx = self.cfg.target_width // 2
                     cy = roi_r3.center[1]
-                    item_label = "Kim Cương" if target_type_r3 == "DIAMOND" else "Phục Tùng C (Obedient C)"
-                    logger.info(f"💎 [VIP9] Phát hiện {item_label} ở DÒNG 3 sau khi cuộn (conf: {match_r3.confidence:.3f}). Bấm tại ({cx}, {cy})")
+                    logger.info("💎 [VIP9] Chọn Dòng 3")
                     self._tap(cx, cy, label="Click Row 3 (Scrolled)")
                     self.play_diamond_row(max_rounds, vip_name="VIP9")
                     # Sau khi chơi xong Dòng 3, cập nhật lại frame mới nhất
                     frame = self._wait_for_frame()
-            else:
-                logger.info(f"[VIP9] Dòng 3 không có Kim Cương / Phục Tùng (conf: {match_r3.confidence:.3f}). Bỏ qua.")
 
             # 3. Soi Dòng 4 (ở vị trí đáy đã lộ rõ sau cú cuộn):
-            # Không cuộn thêm nữa tránh làm trôi dòng 4 lên trên!
-            logger.info("[VIP9] Đang kiểm tra Dòng 4...")
-
             match_r4, target_type_r4, roi_r4 = self._check_candidate_rois(
                 frame=frame,
                 candidate_rois=self.cfg.vip9_scrolled_row4_candidates,
@@ -816,26 +823,15 @@ class GameBot:
                 fallback_tray_roi=tray_roi_r4
             )
 
-            # Tự động lưu ảnh Dòng 4 vào thư mục debug_dumps
-            try:
-                r4_to_save = roi_r4 if roi_r4 else self.cfg.vip9_scrolled_row4_candidates[0]
-                cropped_r4 = frame[r4_to_save.y : r4_to_save.y2, r4_to_save.x : r4_to_save.x2]
-                cv2.imwrite(str(DEBUG_DIR / "vip9_dong_4.png"), cropped_r4)
-            except Exception as e:
-                logger.debug(f"Lỗi lưu ảnh debug line_4: {e}")
-
             if match_r4.found and roi_r4:
                 if self.vision.is_input_zero(frame, roi_r4):
-                    logger.info("⏩ [VIP9] Dòng 4 sau khi cuộn có Kim Cương nhưng Input = 0 -> Bỏ qua dòng!")
+                    logger.info("⏩ [VIP9] Dòng 4 Input = 0 -> Bỏ qua")
                 else:
                     cx = self.cfg.target_width // 2
                     cy = roi_r4.center[1]
-                    item_label = "Kim Cương" if target_type_r4 == "DIAMOND" else "Phục Tùng C (Obedient C)"
-                    logger.info(f"💎 [VIP9] Phát hiện {item_label} ở DÒNG 4 sau khi cuộn (conf: {match_r4.confidence:.3f}). Bấm tại ({cx}, {cy})")
+                    logger.info("💎 [VIP9] Chọn Dòng 4")
                     self._tap(cx, cy, label="Click Row 4 (Scrolled)")
                     self.play_diamond_row(max_rounds, vip_name="VIP9")
-            else:
-                logger.info(f"[VIP9] Dòng 4 không có Kim Cương / Phục Tùng (conf: {match_r4.confidence:.3f}). Bỏ qua.")
 
             # 4. Kết thúc VIP9 -> Luôn cuộn trả khay item về lại đầu trang
             self._swipe_tray_down(label="VIP9", times=1)
@@ -848,9 +844,8 @@ class GameBot:
         - Đảm bảo màn hình sạch 100% không còn popup che trước khi sang vòng mới.
         """
         self._check_stop()
-        logger.info("=== [STATE] Bấm Reset (Refresh) ===")
         cx, cy = self.cfg.reset_btn_pos
-        logger.info(f"🔄 Bấm nút Reset tại ({cx}, {cy})")
+        logger.info(f"🔄 Bấm Reset ({cx}, {cy})")
         self._tap(cx, cy, label="Reset Cycle")
         time.sleep(0.35)
 
@@ -864,7 +859,7 @@ class GameBot:
                     match_ok, _ = self._find_ok_button(frame)
                     if match_ok and match_ok.found:
                         ok_cx, ok_cy = match_ok.center
-                        logger.info(f"✨ [Reset] Phát hiện Popup Warrior Gem tại ({ok_cx}, {ok_cy}) -> Bấm OK giải phóng ngay!")
+                        logger.info(f"✨ [Reset] Popup Warrior Gem -> Bấm OK ({ok_cx}, {ok_cy})")
                         self._tap(ok_cx, ok_cy, label="Click OK (Warrior Gem)")
                         self._confirm_ok_closed(max_wait=1.0)
                         break
@@ -872,7 +867,6 @@ class GameBot:
                 pass
             time.sleep(0.05)
 
-        logger.info("✅ Đã làm mới (Reset) xong chu kỳ và dọn sạch màn hình!")
         return True
 
     # ==================== ĐIỀU PHỐI VÒNG LẶP ====================
