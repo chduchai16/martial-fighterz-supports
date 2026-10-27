@@ -431,6 +431,10 @@ class GameBot:
     def enter_vip_section(self, vip_type: str = "vip7") -> bool:
         """Chuyển vào Tab VIP7 hoặc Tab VIP9 tức thì bằng toạ độ cố định qua Persistent Shell."""
         self._check_stop()
+        if self.active_tab == vip_type:
+            logger.info(f"=== [STATE] Đang ở sẵn Tab {vip_type.upper()} -> Bỏ qua click tab ===")
+            return True
+
         logger.info(f"=== [STATE] Vào Tab {vip_type.upper()} ===")
         pos = self.cfg.vip7_tab_pos if vip_type == "vip7" else self.cfg.vip9_tab_pos
         self._tap(pos[0], pos[1], label=f"Click Tab {vip_type.upper()}")

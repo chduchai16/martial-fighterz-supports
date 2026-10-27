@@ -169,23 +169,27 @@ class VisionEngine:
     def is_input_zero(self, frame: np.ndarray, row_roi: Rect) -> bool:
         """
         Kiểm tra số lượng nguyên liệu đầu vào ở ô avatar bên trái có phải là số 0 không.
-        row_roi: Ô phần thưởng bên phải của dòng (dùng tâm Y của nó để quét cửa sổ dọc chân avatar).
-        1. Quét tìm template input_zero trong dải Y [cy_reward - 40 .. cy_reward + 95], X [120 .. 220].
-        2. Nếu match conf >= 0.82, kiểm tra vùng pixel vàng ngay bên phải số 0:
-           Nếu bên phải có pixel vàng chữ số -> là số nhiều chữ số (như 0962) -> không phải 0 đơn lẻ.
+        row_roi: Ô phần thưởng bên phải của dòng.
+
+        Quy tắc cấu trúc chữ số game:
+        1. Quét dải chân avatar: Y [cy_reward - 100 .. cy_reward + 120], X [120 .. 220].
+        2. Chữ số 0 khớp template input_zero với ngưỡng >= 0.82.
+        3. Phân biệt số 0 đơn lẻ (= 0) với các số 10, 20, 30, 40...:
+           - Số 10, 20, 30...: Chữ số 0 nằm ở hàng đơn vị (bên phải), BÊN TRÁI NÓ có chữ số hàng chục (1, 2, 3...) màu vàng!
+           - Số 0 đơn lẻ: BÊN TRÁI NÓ là cành ngôi sao xanh / nền rác, pixel màu vàng rất ít (< 120px).
+           -> Nếu bên trái số 0 có pixel chữ số màu vàng (>= 120px) -> Là số 10, 20, 30... -> Trả về False!
         """
         h, w = frame.shape[:2]
         scale = w / 1080.0
         cy_reward = row_roi.y + row_roi.h // 2
 
-        # Cửa sổ quét dọc theo chân avatar của dòng: từ cy - 100 đến cy + 120 (ôm trọn số 0 dù khay cuộn hay chưa cuộn)
         y1 = max(0, int(cy_reward - 100 * scale))
         y2 = min(h, int(cy_reward + 120 * scale))
         x1 = int(120 * scale)
         x2 = int(220 * scale)
 
-        search_strip = frame[y1:y2, x1:x2]
-        if search_strip.size == 0:
+        strip = frame[y1:y2, x1:x2]
+        if strip.size == 0:
             return False
 
         tpl = self._raw_templates.get("input_zero")
@@ -195,33 +199,36 @@ class VisionEngine:
         if abs(scale - 1.0) > 0.05:
             tpl = cv2.resize(tpl, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_LINEAR)
 
-        if search_strip.shape[0] < tpl.shape[0] or search_strip.shape[1] < tpl.shape[1]:
+        if strip.shape[0] < tpl.shape[0] or strip.shape[1] < tpl.shape[1]:
             return False
 
-        res = cv2.matchTemplate(search_strip, tpl, cv2.TM_CCOEFF_NORMED)
+        res = cv2.matchTemplate(strip, tpl, cv2.TM_CCOEFF_NORMED)
         min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
         if max_val < 0.82:
             return False
 
-        # Kiểm tra bên phải số 0 xem có chữ số vàng nối tiếp không (tránh 0962)
         zx, zy = max_loc
         tw, th = tpl.shape[1], tpl.shape[0]
-        right_x1 = zx + tw + int(2 * scale)
-        right_x2 = min(search_strip.shape[1], zx + tw + int(28 * scale))
-        right_y1 = max(0, zy)
-        right_y2 = min(search_strip.shape[0], zy + th)
 
-        right_crop = search_strip[right_y1:right_y2, right_x1:right_x2]
-        if right_crop.size == 0:
-            return True
-
+        # Kiểm tra BÊN TRÁI của số 0:
+        # Nếu có chữ số 1, 2, 3... (của 10, 20, 30...) đứng trước số 0 -> có dải pixel vàng lớn
         lower_yellow = np.array([10, 140, 160], dtype=np.uint8)
         upper_yellow = np.array([35, 255, 255], dtype=np.uint8)
-        mask_right = cv2.inRange(cv2.cvtColor(right_crop, cv2.COLOR_BGR2HSV), lower_yellow, upper_yellow)
-        yellow_on_right = np.count_nonzero(mask_right)
 
-        # Số 0 đơn lẻ có pixel vàng bên phải rất ít (< 100*scale^2)
-        return yellow_on_right < int(100 * (scale * scale))
+        left_x1 = max(0, zx - int(28 * scale))
+        left_x2 = max(0, zx - int(2 * scale))
+        left_y1 = max(0, zy)
+        left_y2 = min(strip.shape[0], zy + th)
+
+        if left_x2 > left_x1:
+            crop_left = strip[left_y1:left_y2, left_x1:left_x2]
+            mask_l = cv2.inRange(cv2.cvtColor(crop_left, cv2.COLOR_BGR2HSV), lower_yellow, upper_yellow)
+            yellow_on_left = np.count_nonzero(mask_l)
+            if yellow_on_left >= int(120 * (scale * scale)):
+                # Có chữ số hàng chục đứng trước số 0 (10, 20, 30...) -> Không phải số 0 đơn lẻ!
+                return False
+
+        return True
 
     def check_row_for_targets(
         self,
