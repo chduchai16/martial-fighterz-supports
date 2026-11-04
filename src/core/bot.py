@@ -93,19 +93,18 @@ class GameBot:
         self.capture.tap(x, y, jitter_px=self.cfg.tap_jitter_px)
 
     def _swipe_tray_up(self, label: str = "VIP"):
-        """Vuốt cuộn khay item lên để lộ dòng kế tiếp."""
+        """Vuốt cuộn khay item lên để lộ dòng kế tiếp (thao tác gạt nhanh 100ms)."""
         self._check_stop()
         w, h = self.cfg.target_width, self.cfg.target_height
         x1 = int(self.cfg.swipe_vip9_start_ratio[0] * w)
         y1 = int(self.cfg.swipe_vip9_start_ratio[1] * h)
         x2 = int(self.cfg.swipe_vip9_end_ratio[0] * w)
         y2 = int(self.cfg.swipe_vip9_end_ratio[1] * h)
-        logger.info(f"[{label}] Đang cuộn khay item lên: từ ({x1}, {y1}) -> ({x2}, {y2})...")
-        self.capture.swipe(x1, y1, x2, y2, duration=0.20)
+        self.capture.swipe(x1, y1, x2, y2, duration=0.10)
         time.sleep(self.cfg.wait_after_scroll)
 
     def _swipe_tray_down(self, label: str = "VIP", times: int = 1):
-        """Vuốt cuộn khay item xuống để trở về vị trí đầu, hiện full Dòng 1 và 2."""
+        """Vuốt cuộn khay item xuống để trở về vị trí đầu, hiện full Dòng 1 và 2 (gạt nhanh 100ms)."""
         self._check_stop()
         w, h = self.cfg.target_width, self.cfg.target_height
         x1 = int(self.cfg.swipe_vip9_end_ratio[0] * w)
@@ -113,8 +112,7 @@ class GameBot:
         x2 = int(self.cfg.swipe_vip9_start_ratio[0] * w)
         y2 = int(self.cfg.swipe_vip9_start_ratio[1] * h)
         for i in range(times):
-            logger.info(f"[{label}] Đang cuộn khay item xuống lại đầu trang (lần {i+1}/{times})...")
-            self.capture.swipe(x1, y1, x2, y2, duration=0.20)
+            self.capture.swipe(x1, y1, x2, y2, duration=0.10)
             time.sleep(self.cfg.wait_after_scroll)
 
     def _swipe_vip9_up(self):
@@ -130,6 +128,8 @@ class GameBot:
         min_threshold: float,
         enable_phuc_tung: bool = False,
         phuc_tung_threshold: float = 0.78,
+        enable_coin_300k: bool = False,
+        coin_threshold: float = 0.80,
         fallback_tray_roi: Optional[Rect] = None
     ) -> Tuple[MatchResult, str, Optional[Rect]]:
         """
@@ -147,14 +147,20 @@ class GameBot:
                 row_roi=roi,
                 min_threshold=min_threshold,
                 enable_phuc_tung=enable_phuc_tung,
-                phuc_tung_threshold=phuc_tung_threshold
+                phuc_tung_threshold=phuc_tung_threshold,
+                enable_coin_300k=enable_coin_300k,
+                coin_threshold=coin_threshold
             )
             if match.confidence > best_match.confidence:
                 best_match = match
                 best_type = target_type
                 best_roi = roi
 
-        is_found = (best_match.confidence >= min_threshold) or (enable_phuc_tung and best_type == "PHUC_TUNG_C" and best_match.confidence >= phuc_tung_threshold)
+        is_found = (
+            (best_match.confidence >= min_threshold)
+            or (enable_phuc_tung and best_type == "PHUC_TUNG_C" and best_match.confidence >= phuc_tung_threshold)
+            or (enable_coin_300k and best_type == "COIN_300K" and best_match.confidence >= coin_threshold)
+        )
         if is_found:
             best_match.found = True
             return best_match, best_type, best_roi
@@ -166,7 +172,9 @@ class GameBot:
                 row_roi=fallback_tray_roi,
                 min_threshold=min_threshold,
                 enable_phuc_tung=enable_phuc_tung,
-                phuc_tung_threshold=phuc_tung_threshold
+                phuc_tung_threshold=phuc_tung_threshold,
+                enable_coin_300k=enable_coin_300k,
+                coin_threshold=coin_threshold
             )
             if match_fb.found:
                 cy = match_fb.y + match_fb.h // 2
@@ -208,26 +216,27 @@ class GameBot:
         """
         ĐẢM BẢO BẤM THÀNH CÔNG:
         Theo dõi màn hình liên tục cho tới khi nút/popup biến mất hoàn toàn.
-        Nếu sau 0.25s nút vẫn còn hiển thị, bấm lại tại toạ độ tap_pos cho tới khi màn hình cập nhật đóng hẳn!
+        Cho game 0.5s fade-out tự nhiên sau khi tap. Chỉ tap lại khi quá 0.5s nút vẫn còn nguyên trên màn hình,
+        tránh spam tap bồi xuyên qua popup đè trúng dòng item bên dưới!
         """
         c_start = time.perf_counter()
         last_retry = c_start
         while time.perf_counter() - c_start < max_wait:
             try:
-                frame = self._wait_for_frame()
+                frame = self._wait_for_frame(timeout=0.3)
                 re_match = self.vision.find_template(frame, template_key, threshold=threshold, roi=roi)
                 if not re_match.found:
                     logger.info(f"✅ Nút/Popup '{template_key}' đã đóng hoàn toàn khỏi màn hình.")
                     return True
-                
-                # Nếu quá 0.25s mà nút vẫn còn trên màn hình -> tap lại
-                if time.perf_counter() - last_retry > 0.25:
-                    logger.info(f"🔄 Nút/Popup '{template_key}' vẫn còn (conf: {re_match.confidence:.2f}) -> Bấm lại tại ({tap_pos[0]}, {tap_pos[1]})...")
+
+                # Chỉ tap lại nếu đã qua 0.55s mà nút vẫn còn (chống click đúp xuyên màn hình)
+                if time.perf_counter() - last_retry > 0.55:
+                    logger.info(f"🔄 Nút/Popup '{template_key}' vẫn còn sau {time.perf_counter() - c_start:.2f}s (conf: {re_match.confidence:.2f}) -> Bấm lại tại ({tap_pos[0]}, {tap_pos[1]})...")
                     self._tap(tap_pos[0], tap_pos[1], label=f"Retry {template_key}")
                     last_retry = time.perf_counter()
             except Exception:
                 pass
-            time.sleep(0.005)
+            time.sleep(0.02)
         logger.warning(f"⚠️ Hết thời gian chờ đóng popup '{template_key}'.")
         return False
 
@@ -249,7 +258,7 @@ class GameBot:
                         cx, cy = match_ok.center
                         logger.warning(f"🛑 [Popup OK Phát Hiện] Bấm OK ngay lập tức tại ({cx}, {cy})!")
                         self._tap(cx, cy, label="Click OK Immediate")
-                        self._confirm_ok_closed(max_wait=1.2)
+                        self._confirm_ok_closed(max_wait=0.4)
                         dismissed = True
                         break
             except Exception:
@@ -374,10 +383,10 @@ class GameBot:
                 popup_label = "Warrior Gem" if p_type == "WARRIOR_GEM" else "Hết lượt / Vật phẩm"
                 logger.info(f"🔔 [Popup {popup_label}] Đang xuất hiện tại ({cx}, {cy}) -> Bấm OK!")
                 self._tap(cx, cy, label=f"Click OK ({popup_label})")
-                self._confirm_ok_closed(max_wait=1.2)
+                self._confirm_ok_closed(max_wait=0.4)
                 dismissed_any = True
                 t_start = time.perf_counter()
-                time.sleep(0.25)
+                time.sleep(0.08)
                 continue
 
             # 2. Kiểm tra nút Rút lui / Withdraw (Song ngữ Việt - Anh)
@@ -408,8 +417,8 @@ class GameBot:
                 lbl = "Warrior Gem" if p_type == "WARRIOR_GEM" else "Popup OK"
                 logger.info(f"🔔 [{lbl}] Đang xuất hiện tại ({cx}, {cy}) -> Bấm OK!")
                 self._tap(cx, cy, label=f"Click OK ({lbl})")
-                self._confirm_ok_closed(max_wait=1.2)
-                time.sleep(0.35)
+                self._confirm_ok_closed(max_wait=0.4)
+                time.sleep(0.08)
                 return True
 
             match_btn, btn_key = self._find_reward_button(frame)
@@ -508,15 +517,7 @@ class GameBot:
                 time.sleep(0.18)
                 return "SUCCESS"
 
-            # 3. Skip hoạt ảnh lắc xúc xắc an toàn: Tap tại vùng bàn cờ (540, 750)
-            now = time.perf_counter()
-            safe_skip_y = int(0.39 * self.cfg.target_height)
-            safe_skip_x = int(0.50 * self.cfg.target_width)
-            if elapsed >= 0.15 and (now - last_skip_tap >= 0.22):
-                self.capture.tap(safe_skip_x, safe_skip_y, jitter_px=4)
-                last_skip_tap = now
-
-            time.sleep(0.015)
+            time.sleep(0.02)
 
         logger.warning(f"⚠️ Hết thời gian chờ nhận quà ({wait_limit}s).")
         return "NO_POPUP"
@@ -535,21 +536,26 @@ class GameBot:
         self._check_stop()
         logger.info(f"--- [CHƠI DÒNG KIM CƯƠNG ({vip_name})] Kiểm tra dòng và nhận tối đa {max_rounds} lượt ---")
 
-        # 1. Chờ ngắn 0.20s cho game nảy popup (nếu dòng hết đồ) rồi chụp đúng 1 frame kiểm tra
-        time.sleep(0.20)
-        self._check_stop()
-        try:
-            frame_check = self._wait_for_frame(timeout=1.0)
-            if frame_check is not None:
-                match_ok, ok_key = self._find_ok_button(frame_check)
-                if match_ok and match_ok.found:
-                    cx, cy = match_ok.center
-                    logger.warning(f"🛑 [Popup Cuộn Giấy] Hết đồ -> Bấm OK ({cx}, {cy})")
-                    self._tap(cx, cy, label="Click OK (Hết Đồ Đổi)")
-                    self._confirm_ok_closed(max_wait=0.8)
-                    return False
-        except Exception:
-            pass
+        # 1. Quét kiểm tra modal OK ngay sau khi click chọn dòng:
+        # Chờ frame mới được render sau cú click và lặp kiểm tra liên tục trong 0.5s.
+        # Nếu có modal hết đồ nảy ra -> bấm đóng và THOÁT NGAY LẬP TỨC, không bấm cược EVEN!
+        time.sleep(0.12)
+        t_check_modal = time.perf_counter()
+        while time.perf_counter() - t_check_modal < 0.50:
+            self._check_stop()
+            try:
+                frame_check = self._wait_for_frame(timeout=0.3)
+                if frame_check is not None:
+                    match_ok, ok_key = self._find_ok_button(frame_check)
+                    if match_ok and match_ok.found:
+                        cx, cy = match_ok.center
+                        logger.warning(f"🛑 [Popup Hết Đồ] Phát hiện modal OK ({cx}, {cy}) -> Bấm đóng và THOÁT DÒNG NGAY!")
+                        self._tap(cx, cy, label="Click OK (Hết Đồ Đổi)")
+                        self._confirm_ok_closed(max_wait=0.4)
+                        return False
+            except Exception:
+                pass
+            time.sleep(0.02)
 
         # 2. VÒNG LẶP CƯỢC THEO TỪNG LƯỢT CHUẨN XÁC (Không spam mù, không cược lẹm sang dòng khác)
         even_x, even_y = self.cfg.even_btn_pos
@@ -564,7 +570,7 @@ class GameBot:
             round_claimed = False
             last_skip_tap = 0.0
 
-            while time.perf_counter() - t_wait_round < 6.0:
+            while time.perf_counter() - t_wait_round < self.cfg.round_claim_timeout:
                 self._check_stop()
                 try:
                     f_round = self._wait_for_frame(timeout=0.6)
@@ -582,9 +588,20 @@ class GameBot:
                     withdraw_count += 1
                     logger.info(f"🎉 [{vip_name}] Nhận quà #{withdraw_count}/{max_rounds} ({btn_name})")
                     self._tap(cx, cy, label=f"Click {btn_name}")
-                    # Xác nhận nút đóng hoàn toàn, nếu chưa đóng thì tap lại
-                    self._confirm_button_closed(btn_key, threshold=self.cfg.rut_lui_threshold, roi=self.cfg.rut_lui_roi, tap_pos=(cx, cy), max_wait=1.2)
-                    time.sleep(0.15)
+                    
+                    # Đợi siêu tốc cho tới khi popup biến mất khỏi frame (tối đa 0.6s)
+                    # Nút vừa tắt là nhả ra cược tiếp ngay lập tức, không bấm đè lên popup cũ
+                    t_close = time.perf_counter()
+                    while time.perf_counter() - t_close < 0.6:
+                        try:
+                            f_check = self._wait_for_frame(timeout=0.2)
+                            m_chk, _ = self._find_reward_button(f_check)
+                            if not m_chk or not m_chk.found:
+                                break
+                        except Exception:
+                            break
+                        time.sleep(0.01)
+
                     round_claimed = True
                     break
 
@@ -594,47 +611,16 @@ class GameBot:
                     cx, cy = match_ok.center
                     logger.warning(f"⚠️ [{vip_name}] Popup OK -> Bấm đóng và kết thúc dòng.")
                     self._tap(cx, cy, label="Click OK")
-                    self._confirm_ok_closed(max_wait=0.8)
+                    self._confirm_ok_closed(max_wait=0.35)
                     return True
 
-                # C. Skip hoạt ảnh lắc xúc xắc an toàn ở vùng trên (không dính dòng item)
-                safe_skip_y = int(0.39 * self.cfg.target_height)
-                safe_skip_x = int(0.50 * self.cfg.target_width)
-                if elapsed >= 0.15 and (now - last_skip_tap >= 0.22):
-                    self.capture.tap(safe_skip_x, safe_skip_y, jitter_px=4)
-                    last_skip_tap = now
-
-                time.sleep(0.02)
+                time.sleep(0.01)
 
             if not round_claimed:
                 logger.warning(f"⚠️ [{vip_name}] Hết thời gian chờ quà #{r_idx}")
                 break
 
-            time.sleep(0.18)
-
         logger.info(f"🎉 [{vip_name}] Hoàn tất dòng Kim Cương (Đã cược và nhận {withdraw_count}/{max_rounds} lần quà).")
-
-        # CHỐT CHẶN: Dọn sạch nút Withdraw còn sót hoặc modal OK
-        try:
-            f_clean = self._wait_for_frame(timeout=0.3)
-            # 1. Nếu còn nút Withdraw sót lại -> bấm nhận nốt
-            m_btn, b_key = self._find_reward_button(f_clean)
-            if m_btn and m_btn.found:
-                cx, cy = m_btn.center
-                b_name = "Rút lui" if b_key == "rut_lui_btn" else "Withdraw"
-                logger.info(f"🎉 [{vip_name}] Nhận quà còn sót ({b_name})")
-                self._tap(cx, cy, label=f"Dismiss Tail {b_name}")
-                self._confirm_button_closed(b_key, threshold=self.cfg.rut_lui_threshold, roi=self.cfg.rut_lui_roi, tap_pos=(cx, cy), max_wait=1.2)
-                f_clean = self._wait_for_frame(timeout=0.3)
-
-            # 2. Nếu còn modal OK -> bấm đóng
-            m_ok, _ = self._find_ok_button(f_clean)
-            if m_ok and m_ok.found:
-                self._tap(m_ok.center[0], m_ok.center[1], label="Dismiss Remaining OK")
-                self._confirm_ok_closed(max_wait=0.8)
-        except Exception:
-            pass
-
         return True
 
     def process_vip_section(self, vip_type: str = "vip7"):
@@ -672,7 +658,7 @@ class GameBot:
                 ok_x, ok_y = match_ok_start.center
                 logger.info(f"✨ [VIP7] Phát hiện Popup Warrior Gem/OK tại ({ok_x}, {ok_y}) -> Bấm OK giải phóng ngay!")
                 self._tap(ok_x, ok_y, label="Dismiss Initial OK")
-                self._confirm_ok_closed(max_wait=0.8)
+                self._confirm_ok_closed(max_wait=0.4)
                 frame = self._wait_for_frame()
 
             for idx, target_row in enumerate(initial_rows):
@@ -682,20 +668,32 @@ class GameBot:
                     row_roi=target_row,
                     min_threshold=self.cfg.diamond_threshold,
                     enable_phuc_tung=self.cfg.enable_phuc_tung,
-                    phuc_tung_threshold=self.cfg.phuc_tung_threshold
+                    phuc_tung_threshold=self.cfg.phuc_tung_threshold,
+                    enable_coin_300k=self.cfg.dump_coin_300k,
+                    coin_threshold=self.cfg.coin_threshold
                 )
 
                 if match.found:
-                    if self.vision.is_input_zero(frame, target_row):
-                        logger.info(f"⏩ [VIP7] Dòng #{idx + 1} Input = 0 -> Bỏ qua")
-                        continue
+                    should_play = False
+                    if target_type == "COIN_300K":
+                        if self.vision.is_input_greater_than_30(frame, target_row):
+                            logger.info(f"🔥 [VIP7] Dòng #{idx + 1} là Coin 300K và Input > 30 -> Chọn xả kho")
+                            should_play = True
+                        else:
+                            logger.info(f"⏩ [VIP7] Dòng #{idx + 1} Coin 300K nhưng Input <= 30 -> Bỏ qua")
+                    else:
+                        if self.vision.is_input_zero(frame, target_row):
+                            logger.info(f"⏩ [VIP7] Dòng #{idx + 1} Input = 0 -> Bỏ qua")
+                        else:
+                            should_play = True
 
-                    cx = self.cfg.target_width // 2
-                    cy = target_row.center[1]
-                    logger.info(f"💎 [VIP7] Chọn Dòng #{idx + 1}")
-                    self._tap(cx, cy, label=f"Click Center Row #{idx + 1}")
-                    self.play_diamond_row(max_rounds, vip_name="VIP7")
-                    frame = self._wait_for_frame()
+                    if should_play:
+                        cx = self.cfg.target_width // 2
+                        cy = target_row.center[1]
+                        logger.info(f"💎 [VIP7] Chọn Dòng #{idx + 1} ({target_type})")
+                        self._tap(cx, cy, label=f"Click Center Row #{idx + 1}")
+                        self.play_diamond_row(max_rounds, vip_name="VIP7")
+                        frame = self._wait_for_frame()
 
             # 2. Xử lý Dòng 3 VIP7: Kéo cuộn lên 1 lần để dòng 3 lộ ra hoàn toàn
             self._check_stop()
@@ -714,16 +712,29 @@ class GameBot:
                 min_threshold=self.cfg.diamond_threshold,
                 enable_phuc_tung=self.cfg.enable_phuc_tung,
                 phuc_tung_threshold=self.cfg.phuc_tung_threshold,
+                enable_coin_300k=self.cfg.dump_coin_300k,
+                coin_threshold=self.cfg.coin_threshold,
                 fallback_tray_roi=tray_roi
             )
 
             if match_r3.found and roi_r3:
-                if self.vision.is_input_zero(frame, roi_r3):
-                    logger.info("⏩ [VIP7] Dòng 3 Input = 0 -> Bỏ qua")
+                should_play = False
+                if target_type_r3 == "COIN_300K":
+                    if self.vision.is_input_greater_than_30(frame, roi_r3):
+                        logger.info("🔥 [VIP7] Dòng 3 là Coin 300K và Input > 30 -> Chọn xả kho")
+                        should_play = True
+                    else:
+                        logger.info("⏩ [VIP7] Dòng 3 Coin 300K nhưng Input <= 30 -> Bỏ qua")
                 else:
+                    if self.vision.is_input_zero(frame, roi_r3):
+                        logger.info("⏩ [VIP7] Dòng 3 Input = 0 -> Bỏ qua")
+                    else:
+                        should_play = True
+
+                if should_play:
                     cx = self.cfg.target_width // 2
                     cy = roi_r3.center[1]
-                    logger.info("💎 [VIP7] Chọn Dòng 3")
+                    logger.info(f"💎 [VIP7] Chọn Dòng 3 ({target_type_r3})")
                     self._tap(cx, cy, label="Click Row 3 (Scrolled)")
                     self.play_diamond_row(max_rounds, vip_name="VIP7")
 
@@ -753,7 +764,7 @@ class GameBot:
                 ok_x, ok_y = match_ok_start.center
                 logger.info(f"✨ [VIP9] Popup Warrior Gem/OK -> Bấm OK ({ok_x}, {ok_y})")
                 self._tap(ok_x, ok_y, label="Dismiss Initial OK")
-                self._confirm_ok_closed(max_wait=0.8)
+                self._confirm_ok_closed(max_wait=0.4)
                 frame = self._wait_for_frame()
 
             for idx, target_row in enumerate(initial_rows):
@@ -763,20 +774,32 @@ class GameBot:
                     row_roi=target_row,
                     min_threshold=self.cfg.diamond_threshold,
                     enable_phuc_tung=self.cfg.enable_phuc_tung,
-                    phuc_tung_threshold=self.cfg.phuc_tung_threshold
+                    phuc_tung_threshold=self.cfg.phuc_tung_threshold,
+                    enable_coin_300k=self.cfg.dump_coin_300k,
+                    coin_threshold=self.cfg.coin_threshold
                 )
 
                 if match.found:
-                    if self.vision.is_input_zero(frame, target_row):
-                        logger.info(f"⏩ [VIP9] Dòng #{idx + 1} Input = 0 -> Bỏ qua")
-                        continue
+                    should_play = False
+                    if target_type == "COIN_300K":
+                        if self.vision.is_input_greater_than_30(frame, target_row):
+                            logger.info(f"🔥 [VIP9] Dòng #{idx + 1} là Coin 300K và Input > 30 -> Chọn xả kho")
+                            should_play = True
+                        else:
+                            logger.info(f"⏩ [VIP9] Dòng #{idx + 1} Coin 300K nhưng Input <= 30 -> Bỏ qua")
+                    else:
+                        if self.vision.is_input_zero(frame, target_row):
+                            logger.info(f"⏩ [VIP9] Dòng #{idx + 1} Input = 0 -> Bỏ qua")
+                        else:
+                            should_play = True
 
-                    cx = self.cfg.target_width // 2
-                    cy = target_row.center[1]
-                    logger.info(f"💎 [VIP9] Chọn Dòng #{idx + 1}")
-                    self._tap(cx, cy, label=f"Click Center Row #{idx + 1}")
-                    self.play_diamond_row(max_rounds, vip_name="VIP9")
-                    frame = self._wait_for_frame()
+                    if should_play:
+                        cx = self.cfg.target_width // 2
+                        cy = target_row.center[1]
+                        logger.info(f"💎 [VIP9] Chọn Dòng #{idx + 1} ({target_type})")
+                        self._tap(cx, cy, label=f"Click Center Row #{idx + 1}")
+                        self.play_diamond_row(max_rounds, vip_name="VIP9")
+                        frame = self._wait_for_frame()
 
             # 2. Xử lý Dòng 3 và Dòng 4 VIP9:
             # Cuộn lên 1 LẦN DUY NHẤT để đưa CẢ Dòng 3 và Dòng 4 vào tầm nhìn rõ nét
@@ -798,16 +821,29 @@ class GameBot:
                 min_threshold=self.cfg.diamond_threshold,
                 enable_phuc_tung=self.cfg.enable_phuc_tung,
                 phuc_tung_threshold=self.cfg.phuc_tung_threshold,
+                enable_coin_300k=self.cfg.dump_coin_300k,
+                coin_threshold=self.cfg.coin_threshold,
                 fallback_tray_roi=tray_roi_r3
             )
 
             if match_r3.found and roi_r3:
-                if self.vision.is_input_zero(frame, roi_r3):
-                    logger.info("⏩ [VIP9] Dòng 3 Input = 0 -> Bỏ qua")
+                should_play = False
+                if target_type_r3 == "COIN_300K":
+                    if self.vision.is_input_greater_than_30(frame, roi_r3):
+                        logger.info("🔥 [VIP9] Dòng 3 là Coin 300K và Input > 30 -> Chọn xả kho")
+                        should_play = True
+                    else:
+                        logger.info("⏩ [VIP9] Dòng 3 Coin 300K nhưng Input <= 30 -> Bỏ qua")
                 else:
+                    if self.vision.is_input_zero(frame, roi_r3):
+                        logger.info("⏩ [VIP9] Dòng 3 Input = 0 -> Bỏ qua")
+                    else:
+                        should_play = True
+
+                if should_play:
                     cx = self.cfg.target_width // 2
                     cy = roi_r3.center[1]
-                    logger.info("💎 [VIP9] Chọn Dòng 3")
+                    logger.info(f"💎 [VIP9] Chọn Dòng 3 ({target_type_r3})")
                     self._tap(cx, cy, label="Click Row 3 (Scrolled)")
                     self.play_diamond_row(max_rounds, vip_name="VIP9")
                     # Sau khi chơi xong Dòng 3, cập nhật lại frame mới nhất
@@ -820,16 +856,29 @@ class GameBot:
                 min_threshold=self.cfg.diamond_threshold,
                 enable_phuc_tung=self.cfg.enable_phuc_tung,
                 phuc_tung_threshold=self.cfg.phuc_tung_threshold,
+                enable_coin_300k=self.cfg.dump_coin_300k,
+                coin_threshold=self.cfg.coin_threshold,
                 fallback_tray_roi=tray_roi_r4
             )
 
             if match_r4.found and roi_r4:
-                if self.vision.is_input_zero(frame, roi_r4):
-                    logger.info("⏩ [VIP9] Dòng 4 Input = 0 -> Bỏ qua")
+                should_play = False
+                if target_type_r4 == "COIN_300K":
+                    if self.vision.is_input_greater_than_30(frame, roi_r4):
+                        logger.info("🔥 [VIP9] Dòng 4 là Coin 300K và Input > 30 -> Chọn xả kho")
+                        should_play = True
+                    else:
+                        logger.info("⏩ [VIP9] Dòng 4 Coin 300K nhưng Input <= 30 -> Bỏ qua")
                 else:
+                    if self.vision.is_input_zero(frame, roi_r4):
+                        logger.info("⏩ [VIP9] Dòng 4 Input = 0 -> Bỏ qua")
+                    else:
+                        should_play = True
+
+                if should_play:
                     cx = self.cfg.target_width // 2
                     cy = roi_r4.center[1]
-                    logger.info("💎 [VIP9] Chọn Dòng 4")
+                    logger.info(f"💎 [VIP9] Chọn Dòng 4 ({target_type_r4})")
                     self._tap(cx, cy, label="Click Row 4 (Scrolled)")
                     self.play_diamond_row(max_rounds, vip_name="VIP9")
 

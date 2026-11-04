@@ -282,7 +282,18 @@ class ModernBotApp(ctk.CTk):
             text_color=("#334155", "#cbd5e1"),
             progress_color="#0284c7"
         )
-        self.phuc_tung_switch.pack(anchor="w", padx=16, pady=(2, 6))
+        self.phuc_tung_switch.pack(anchor="w", padx=16, pady=(2, 4))
+
+        # Switch: Xả Coin 300k khi nguyên liệu > 30
+        self.dump_coin_switch = ctk.CTkSwitch(
+            left_card,
+            text="Xả Coin 300K khi input > 30",
+            font=ctk.CTkFont(family="Segoe UI", size=12),
+            text_color=("#334155", "#cbd5e1"),
+            progress_color="#0284c7"
+        )
+        self.dump_coin_switch.select()  # Mặc định bật
+        self.dump_coin_switch.pack(anchor="w", padx=16, pady=(2, 6))
 
         # Nhãn & Lựa chọn Ngôn ngữ Game (ở bên dưới mục Phục Tùng)
         ctk.CTkLabel(
@@ -598,8 +609,9 @@ class ModernBotApp(ctk.CTk):
         else:
             config.even_odd_strategy = "random"
 
-        # Phục Tùng C & D và Ngôn ngữ
+        # Phục Tùng C & D, Xả Coin 300k và Ngôn ngữ
         config.enable_phuc_tung = (self.phuc_tung_switch.get() == 1)
+        config.dump_coin_300k = (self.dump_coin_switch.get() == 1)
         lang_raw = self.lang_cb.get()
         if "vi" in lang_raw:
             config.game_language = "vi"

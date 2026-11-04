@@ -179,55 +179,300 @@ class VisionEngine:
            - Số 0 đơn lẻ: BÊN TRÁI NÓ là cành ngôi sao xanh / nền rác, pixel màu vàng rất ít (< 120px).
            -> Nếu bên trái số 0 có pixel chữ số màu vàng (>= 120px) -> Là số 10, 20, 30... -> Trả về False!
         """
+    def _extract_digit_boxes(self, frame: np.ndarray, row_roi: Rect) -> Tuple[np.ndarray, List[Tuple[int, int, int, int]]]:
+        """
+        Trích xuất cụm box chữ số số lượng chân avatar:
+        1. Vùng cắt Y [cy - 100 .. cy + 70], X [120 .. 192] bao trọn cả trạng thái ban đầu và cuộn lỡ.
+        2. Lọc dải màu vàng cam [12..30, 160..255, 160..255] loại trừ tóc Salza và kính Scouter (H > 35).
+        3. Tiêu chuẩn viền đen đậm (black_cnt >= 40) loại bỏ hoàn toàn các mảng sáng nền avatar.
+        4. Gom cụm các chữ số liền kề nhau (cùng baseline Y <= 6px VÀ khoảng cách X <= 16px).
+        """
         h, w = frame.shape[:2]
         scale = w / 1080.0
         cy_reward = row_roi.y + row_roi.h // 2
 
-        y1 = max(0, int(cy_reward - 100 * scale))
-        y2 = min(h, int(cy_reward + 120 * scale))
+        y1 = max(0, int((cy_reward - 100) * scale))
+        y2 = min(h, int((cy_reward + 70) * scale))
         x1 = int(120 * scale)
-        x2 = int(220 * scale)
+        x2 = int(192 * scale)
 
         strip = frame[y1:y2, x1:x2]
         if strip.size == 0:
+            return strip, []
+
+        hsv = cv2.cvtColor(strip, cv2.COLOR_BGR2HSV)
+        lower_yellow = np.array([12, 160, 160], dtype=np.uint8)
+        upper_yellow = np.array([30, 255, 255], dtype=np.uint8)
+        mask = cv2.inRange(hsv, lower_yellow, upper_yellow)
+
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        clean_boxes = []
+        for c in contours:
+            if cv2.contourArea(c) > 20:
+                bx, by, bw, bh = cv2.boundingRect(c)
+                if (14 * scale <= bh <= 34 * scale) and (4 * scale <= bw <= 30 * scale):
+                    patch = strip[max(0, by - 2):min(strip.shape[0], by + bh + 2), max(0, bx - 2):min(strip.shape[1], bx + bw + 2)]
+                    black_cnt = np.count_nonzero((patch[:, :, 0] < 50) & (patch[:, :, 1] < 50) & (patch[:, :, 2] < 50))
+                    # Chữ số game có viền đen đậm (black_cnt >= 35), hoặc khối số mock test có diện tích >= 250px
+                    if black_cnt >= 35 or cv2.contourArea(c) >= 250:
+                        clean_boxes.append((bx, by, bw, bh))
+
+        clean_boxes.sort(key=lambda b: b[0])
+        clusters = []
+        for b in clean_boxes:
+            added = False
+            cy_b = b[1] + b[3] / 2.0
+            bot_b = b[1] + b[3]
+            for cl in clusters:
+                last = cl[-1]
+                cy_last = last[1] + last[3] / 2.0
+                bot_last = last[1] + last[3]
+                # Các chữ số cùng hàng phải đồng trục tâm Y (<= 3.5px) và bằng đáy Y (<= 3.5px), tránh gom tia lửa vũ khí phía trên
+                if abs(cy_b - cy_last) <= int(3.5 * scale) and abs(bot_b - bot_last) <= int(3.5 * scale) and (b[0] - (last[0] + last[2])) <= int(12 * scale):
+                    cl.append(b)
+                    added = True
+                    break
+            if not added:
+                clusters.append([b])
+
+        if not clusters:
+            return strip, []
+
+        # Chọn cụm số: ưu tiên cụm có nhiều chữ số (số 2 chữ số trở lên), nếu cùng số chữ số thì chọn cụm nằm ở đáy chân avatar (bottom Y lớn nhất)
+        best_cl = max(clusters, key=lambda cl: (len(cl), max(b[1] + b[3] for b in cl)))
+        best_cl.sort(key=lambda b: b[0])
+        return strip, best_cl
+
+    def is_input_zero(self, frame: np.ndarray, row_roi: Rect) -> bool:
+        """
+        Kiểm tra ô avatar có số lượng = 0 hay không:
+        1. Phải có duy nhất 1 chữ số ở chân avatar.
+        2. Chữ số đó phải có cấu trúc hình học lỗ rỗng màu đen ở tâm.
+        3. Phân biệt với số 9: Số 0 là vòng tròn đối xứng đều ở nửa dưới (tỉ lệ pixel vàng trái/phải >= 0.88),
+           trong khi số 9 có đuôi thò sang phải và nửa dưới bên trái rỗng (tỉ lệ < 0.75).
+        """
+        strip, digits = self._extract_digit_boxes(frame, row_roi)
+        if len(digits) != 1:
             return False
 
-        tpl = self._raw_templates.get("input_zero")
-        if tpl is None:
+        bx, by, bw, bh = digits[0]
+        patch = strip[by:by + bh, bx:bx + bw]
+        py, px = patch.shape[0] // 2, patch.shape[1] // 2
+        center_area = patch[max(0, py - 3):min(patch.shape[0], py + 4), max(0, px - 3):min(patch.shape[1], px + 4)]
+        if center_area.size == 0:
             return False
 
-        if abs(scale - 1.0) > 0.05:
-            tpl = cv2.resize(tpl, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_LINEAR)
-
-        if strip.shape[0] < tpl.shape[0] or strip.shape[1] < tpl.shape[1]:
+        black_cnt = np.count_nonzero((center_area[:, :, 0] < 65) & (center_area[:, :, 1] < 65) & (center_area[:, :, 2] < 65))
+        if black_cnt < 12:
             return False
 
-        res = cv2.matchTemplate(strip, tpl, cv2.TM_CCOEFF_NORMED)
-        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
-        if max_val < 0.82:
+        # Phân biệt số 0 và số 9 dựa trên tính đối xứng nửa dưới:
+        h_p, w_p = patch.shape[:2]
+        bottom_patch = patch[int(0.40 * h_p):, :]
+        mid_x = bottom_patch.shape[1] // 2
+        hsv_b = cv2.cvtColor(bottom_patch, cv2.COLOR_BGR2HSV)
+        mask_b = cv2.inRange(hsv_b, np.array([12, 160, 160], dtype=np.uint8), np.array([30, 255, 255], dtype=np.uint8))
+
+        cnt_l = np.count_nonzero(mask_b[:, :mid_x])
+        cnt_r = np.count_nonzero(mask_b[:, mid_x:])
+        symmetry_ratio = cnt_l / max(1, cnt_r)
+
+        return symmetry_ratio >= 0.88
+
+    def is_input_greater_than_30(self, frame: np.ndarray, row_roi: Rect) -> bool:
+        """
+        Kiểm tra số lượng nguyên liệu đầu vào ở ô avatar bên trái có lớn hơn 30 hay không (> 30).
+        Quy tắc:
+        1. Cắt strip chân avatar chuẩn xác qua _extract_digit_boxes.
+        2. Phân loại theo số lượng chữ số:
+           - Số lượng chữ số <= 1 (tức 0..9): Không > 30 -> False.
+           - Số lượng chữ số >= 3 (tức >= 100): Chắc chắn > 30 -> True.
+           - Số lượng chữ số == 2 (tức 10..99):
+             + So khớp chữ số hàng chục với template:
+             + Nếu hàng chục là '1' (conf >= 0.78) -> 10..19 -> False.
+             + Nếu hàng chục là '2' (conf >= 0.78) -> 20..29 -> False.
+             + Nếu hàng chục là '3' (conf >= 0.78) -> 30..39:
+                 Kiểm tra chữ số hàng đơn vị: nếu là '0' (conf >= 0.78) -> Đúng 30 (Không > 30) -> False.
+                 Nếu hàng đơn vị khác '0' -> 31..39 -> True.
+             + Nếu hàng chục không phải 1, 2, 3 (là 4, 5, 6, 7, 8, 9) -> > 30 -> True.
+        """
+        strip, digit_boxes = self._extract_digit_boxes(frame, row_roi)
+        num_digits = len(digit_boxes)
+
+        if num_digits <= 1:
             return False
+        if num_digits >= 3:
+            return True
 
-        zx, zy = max_loc
-        tw, th = tpl.shape[1], tpl.shape[0]
+        # Đang có đúng 2 chữ số (10..99)
+        # Bóc tách chữ số hàng chục (box đầu tiên) kèm viền đệm 4px
+        scale = frame.shape[1] / 1080.0
+        t_bx, t_by, t_bw, t_bh = digit_boxes[0]
+        pad = int(4 * scale)
+        py1 = max(0, t_by - pad)
+        py2 = min(strip.shape[0], t_by + t_bh + pad)
+        px1 = max(0, t_bx - pad)
+        px2 = min(strip.shape[1], t_bx + t_bw + pad)
+        crop_tens = strip[py1:py2, px1:px2]
 
-        # Kiểm tra BÊN TRÁI của số 0:
-        # Nếu có chữ số 1, 2, 3... (của 10, 20, 30...) đứng trước số 0 -> có dải pixel vàng lớn
-        lower_yellow = np.array([10, 140, 160], dtype=np.uint8)
-        upper_yellow = np.array([35, 255, 255], dtype=np.uint8)
+        def _match_digit_tpl(crop_img: np.ndarray, tpl_key: str) -> float:
+            tpl = self._raw_templates.get(tpl_key)
+            if tpl is None:
+                return 0.0
+            if abs(scale - 1.0) > 0.05:
+                tpl = cv2.resize(tpl, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_LINEAR)
+            if crop_img.shape[0] < tpl.shape[0] or crop_img.shape[1] < tpl.shape[1]:
+                # Mở rộng canvas nếu crop nhỏ hơn template một chút
+                new_h = max(crop_img.shape[0], tpl.shape[0] + 4)
+                new_w = max(crop_img.shape[1], tpl.shape[1] + 4)
+                padded = np.zeros((new_h, new_w, 3), dtype=np.uint8)
+                padded[:crop_img.shape[0], :crop_img.shape[1]] = crop_img
+                crop_img = padded
+            res = cv2.matchTemplate(crop_img, tpl, cv2.TM_CCOEFF_NORMED)
+            _, max_v, _, _ = cv2.minMaxLoc(res)
+            return float(max_v)
 
-        left_x1 = max(0, zx - int(28 * scale))
-        left_x2 = max(0, zx - int(2 * scale))
-        left_y1 = max(0, zy)
-        left_y2 = min(strip.shape[0], zy + th)
+        conf_1 = _match_digit_tpl(crop_tens, "digit_1")
+        if conf_1 >= 0.78:
+            return False  # Hàng chục là 1 (10..19) -> không > 30
 
-        if left_x2 > left_x1:
-            crop_left = strip[left_y1:left_y2, left_x1:left_x2]
-            mask_l = cv2.inRange(cv2.cvtColor(crop_left, cv2.COLOR_BGR2HSV), lower_yellow, upper_yellow)
-            yellow_on_left = np.count_nonzero(mask_l)
-            if yellow_on_left >= int(120 * (scale * scale)):
-                # Có chữ số hàng chục đứng trước số 0 (10, 20, 30...) -> Không phải số 0 đơn lẻ!
-                return False
+        conf_2 = _match_digit_tpl(crop_tens, "digit_2")
+        if conf_2 >= 0.78:
+            return False  # Hàng chục là 2 (20..29) -> không > 30
 
+        conf_3 = _match_digit_tpl(crop_tens, "digit_3")
+        if conf_3 >= 0.78:
+            # Hàng chục là 3: Kiểm tra chữ số hàng đơn vị (box thứ hai)
+            u_bx, u_by, u_bw, u_bh = digit_boxes[1]
+            uy1 = max(0, u_by - pad)
+            uy2 = min(strip.shape[0], u_by + u_bh + pad)
+            ux1 = max(0, u_bx - pad)
+            ux2 = min(strip.shape[1], u_bx + u_bw + pad)
+            crop_units = strip[uy1:uy2, ux1:ux2]
+            conf_0 = _match_digit_tpl(crop_units, "input_zero")
+            if conf_0 >= 0.78:
+                return False  # Là số 30 đúng nghĩa -> không > 30
+            return True  # 31..39 -> > 30
+
+        # Hàng chục không phải 1, 2, 3 (là 4, 5, 6, 7, 8, 9) -> chắc chắn > 30
+        return True
+
+        num_digits = len(digit_boxes)
+
+        if num_digits <= 1:
+            return False
+        if num_digits >= 3:
+            return True
+
+        # Đang có đúng 2 chữ số (10..99)
+        # Bóc tách chữ số hàng chục (box đầu tiên) kèm viền đệm 4px
+        t_bx, t_by, t_bw, t_bh = digit_boxes[0]
+        pad = int(4 * scale)
+        py1 = max(0, t_by - pad)
+        py2 = min(strip.shape[0], t_by + t_bh + pad)
+        px1 = max(0, t_bx - pad)
+        px2 = min(strip.shape[1], t_bx + t_bw + pad)
+        crop_tens = strip[py1:py2, px1:px2]
+
+        def _match_digit_tpl(crop_img: np.ndarray, tpl_key: str) -> float:
+            tpl = self._raw_templates.get(tpl_key)
+            if tpl is None:
+                return 0.0
+            if abs(scale - 1.0) > 0.05:
+                tpl = cv2.resize(tpl, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_LINEAR)
+            if crop_img.shape[0] < tpl.shape[0] or crop_img.shape[1] < tpl.shape[1]:
+                # Mở rộng canvas nếu crop nhỏ hơn template một chút
+                new_h = max(crop_img.shape[0], tpl.shape[0] + 4)
+                new_w = max(crop_img.shape[1], tpl.shape[1] + 4)
+                padded = np.zeros((new_h, new_w, 3), dtype=np.uint8)
+                padded[:crop_img.shape[0], :crop_img.shape[1]] = crop_img
+                crop_img = padded
+            res = cv2.matchTemplate(crop_img, tpl, cv2.TM_CCOEFF_NORMED)
+            _, max_v, _, _ = cv2.minMaxLoc(res)
+            return float(max_v)
+
+        conf_1 = _match_digit_tpl(crop_tens, "digit_1")
+        if conf_1 >= 0.78:
+            return False  # Hàng chục là 1 (10..19) -> không > 30
+
+        conf_2 = _match_digit_tpl(crop_tens, "digit_2")
+        if conf_2 >= 0.78:
+            return False  # Hàng chục là 2 (20..29) -> không > 30
+
+        conf_3 = _match_digit_tpl(crop_tens, "digit_3")
+        if conf_3 >= 0.78:
+            # Hàng chục là 3: Kiểm tra chữ số hàng đơn vị (box thứ hai)
+            u_bx, u_by, u_bw, u_bh = digit_boxes[1]
+            uy1 = max(0, u_by - pad)
+            uy2 = min(strip.shape[0], u_by + u_bh + pad)
+            ux1 = max(0, u_bx - pad)
+            ux2 = min(strip.shape[1], u_bx + u_bw + pad)
+            crop_units = strip[uy1:uy2, ux1:ux2]
+            conf_0 = _match_digit_tpl(crop_units, "input_zero")
+            if conf_0 >= 0.78:
+                return False  # Là số 30 đúng nghĩa -> không > 30
+            return True  # 31..39 -> > 30
+
+        # Hàng chục không phải 1, 2, 3 (là 4, 5, 6, 7, 8, 9) -> chắc chắn > 30
+        return True
+
+        num_digits = len(digit_boxes)
+
+        if num_digits <= 1:
+            return False
+        if num_digits >= 3:
+            return True
+
+        # Đang có đúng 2 chữ số (10..99)
+        # Bóc tách chữ số hàng chục (box đầu tiên) kèm viền đệm 4px
+        t_bx, t_by, t_bw, t_bh = digit_boxes[0]
+        pad = int(4 * scale)
+        py1 = max(0, t_by - pad)
+        py2 = min(strip.shape[0], t_by + t_bh + pad)
+        px1 = max(0, t_bx - pad)
+        px2 = min(strip.shape[1], t_bx + t_bw + pad)
+        crop_tens = strip[py1:py2, px1:px2]
+
+        def _match_digit_tpl(crop_img: np.ndarray, tpl_key: str) -> float:
+            tpl = self._raw_templates.get(tpl_key)
+            if tpl is None:
+                return 0.0
+            if abs(scale - 1.0) > 0.05:
+                tpl = cv2.resize(tpl, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_LINEAR)
+            if crop_img.shape[0] < tpl.shape[0] or crop_img.shape[1] < tpl.shape[1]:
+                # Mở rộng canvas nếu crop nhỏ hơn template một chút
+                new_h = max(crop_img.shape[0], tpl.shape[0] + 4)
+                new_w = max(crop_img.shape[1], tpl.shape[1] + 4)
+                padded = np.zeros((new_h, new_w, 3), dtype=np.uint8)
+                padded[:crop_img.shape[0], :crop_img.shape[1]] = crop_img
+                crop_img = padded
+            res = cv2.matchTemplate(crop_img, tpl, cv2.TM_CCOEFF_NORMED)
+            _, max_v, _, _ = cv2.minMaxLoc(res)
+            return float(max_v)
+
+        conf_1 = _match_digit_tpl(crop_tens, "digit_1")
+        if conf_1 >= 0.80:
+            return False  # Hàng chục là 1 (10..19) -> không > 30
+
+        conf_2 = _match_digit_tpl(crop_tens, "digit_2")
+        if conf_2 >= 0.80:
+            return False  # Hàng chục là 2 (20..29) -> không > 30
+
+        conf_3 = _match_digit_tpl(crop_tens, "digit_3")
+        if conf_3 >= 0.80:
+            # Hàng chục là 3: Kiểm tra chữ số hàng đơn vị (box thứ hai)
+            u_bx, u_by, u_bw, u_bh = digit_boxes[1]
+            uy1 = max(0, u_by - pad)
+            uy2 = min(strip.shape[0], u_by + u_bh + pad)
+            ux1 = max(0, u_bx - pad)
+            ux2 = min(strip.shape[1], u_bx + u_bw + pad)
+            crop_units = strip[uy1:uy2, ux1:ux2]
+            conf_0 = _match_digit_tpl(crop_units, "input_zero")
+            if conf_0 >= 0.78:
+                return False  # Là số 30 đúng nghĩa -> không > 30
+            return True  # 31..39 -> > 30
+
+        # Hàng chục không phải 1, 2, 3 (là 4, 5, 6, 7, 8, 9) -> chắc chắn > 30
         return True
 
     def check_row_for_targets(
@@ -236,13 +481,16 @@ class VisionEngine:
         row_roi: Rect,
         min_threshold: float = 0.80,
         enable_phuc_tung: bool = False,
-        phuc_tung_threshold: float = 0.78
+        phuc_tung_threshold: float = 0.78,
+        enable_coin_300k: bool = False,
+        coin_threshold: float = 0.80
     ) -> Tuple[MatchResult, str]:
         """
         Kiểm tra một dòng cụ thể xem có chứa mục tiêu nhận quà hay không:
         1. Luôn ưu tiên kiểm tra Kim Cương: 'kim_cuong_inner', 'kim_cuong'
         2. Nếu bật enable_phuc_tung: kiểm tra thêm Phục Tùng C ('phuc_tung_c_inner', 'phuc_tung_c_icon', 'phuc_tung_c_text')
-        Trả về (MatchResult, target_type) với target_type là 'DIAMOND', 'PHUC_TUNG_C', hoặc 'NONE'.
+        3. Nếu bật enable_coin_300k: kiểm tra thêm phần thưởng 300,000 Coin ('coin_300k', 'coin_300000_text')
+        Trả về (MatchResult, target_type) với target_type là 'DIAMOND', 'PHUC_TUNG_C', 'COIN_300K' hoặc 'NONE'.
         """
         # 1. Ưu tiên kiểm tra Kim Cương
         diamond_match = self.check_row_for_diamond(frame, row_roi, min_threshold)
@@ -267,8 +515,23 @@ class VisionEngine:
                 best_pt.found = True
                 return best_pt, "PHUC_TUNG_C"
 
-            best_res = diamond_match if diamond_match.confidence >= best_pt.confidence else best_pt
-            return best_res, "NONE"
+        # 3. Nếu bật xả kho Coin 300k
+        if enable_coin_300k:
+            best_coin = MatchResult(found=False, confidence=0.0)
+            coin_keys = ["coin_300k", "coin_300000_text"]
+            for c_key in coin_keys:
+                match_c = self.find_template(
+                    frame=frame,
+                    template_key_or_path=c_key,
+                    threshold=0.0,
+                    roi=row_roi
+                )
+                if match_c.confidence > best_coin.confidence:
+                    best_coin = match_c
+
+            if best_coin.confidence >= coin_threshold:
+                best_coin.found = True
+                return best_coin, "COIN_300K"
 
         return diamond_match, "NONE"
 

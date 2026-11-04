@@ -110,8 +110,10 @@ class BotConfig:
     # Chiến lược chọn Even/Odd (Mặc định chọn CHẴN)
     even_odd_strategy: str = "even"
 
-    # Tuỳ chọn ăn thêm Phục Tùng C & D và Ngôn ngữ game
+    # Tuỳ chọn ăn thêm Phục Tùng C & D, xả Coin 300k và Ngôn ngữ game
     enable_phuc_tung: bool = False
+    dump_coin_300k: bool = True  # Tự động xả Coin 300k khi input item > 30
+    coin_threshold: float = 0.75  # Ngưỡng nhận diện reward 300,000 Coin (đặt 0.75 an toàn, chống trượt)
     game_language: str = "auto"  # "auto", "vi", "en"
 
     # Số lần nhận quà tối đa cho mỗi dòng item
@@ -123,14 +125,15 @@ class BotConfig:
     retry_interval_sec: float = 0.3
 
     # Thời gian chờ phản hồi tối ưu (giây) - Phản xạ nhanh, không đứng im vô nghĩa
-    api_loading_timeout: float = 15.0   # Chờ API xúc xắc + mở quà tối đa 15s (sẽ click ngay lập tức khi xuất hiện)
+    api_loading_timeout: float = 60.0   # Chờ API xúc xắc + mở quà tối đa 60s (1 phút khi server lag)
+    round_claim_timeout: float = 60.0   # Chờ nút Withdraw hoặc popup OK tối đa 60s (1 phút)
     reset_api_timeout: float = 8.0      # Chờ API Reset tối đa 8s
     wait_after_tap: float = 0.04        # Giảm còn 40ms
     wait_after_vip_open: float = 0.25   # Đợi 250ms cho tab VIP chuyển cảnh ổn định
     wait_after_even_odd: float = 0.04   # Giảm còn 40ms sau khi bấm Even/Odd
     wait_after_rut_lui: float = 0.05    # Giảm còn 50ms sau khi bấm Rút lui
     wait_after_reset: float = 0.20      # Giảm còn 200ms sau khi bấm Reset
-    wait_after_scroll: float = 0.35     # Đợi swipe và quán tính cuộn dừng hẳn (350ms)
+    wait_after_scroll: float = 0.15     # Rút ngắn còn 150ms sau khi cuộn gạt nhanh
 
     # Độ lệch pixel ngẫu nhiên khi tap
     tap_jitter_px: int = 4
@@ -158,6 +161,12 @@ class BotConfig:
         "warrior_gem_en": IMAGES_DIR / "warrior_gem_en.png",
         "warrior_gem_full_en": IMAGES_DIR / "warrior_gem_full_en.png",
         "input_zero": IMAGES_DIR / "input_zero.png",
+        "digit_1": IMAGES_DIR / "digit_1.png",
+        "digit_2": IMAGES_DIR / "digit_2.png",
+        "digit_3": IMAGES_DIR / "digit_3.png",
+        "coin_300k": IMAGES_DIR / "coin_300k.png",
+        "coin_300000_text": IMAGES_DIR / "coin_300000_text.png",
+        "loading_text": IMAGES_DIR / "loading_text.png",
     })
 
     # Toạ độ Ô THỨ 1 (Min Earning) chuẩn xác ôm trọn khung vật phẩm (230x250 px)
