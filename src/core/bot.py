@@ -93,27 +93,31 @@ class GameBot:
         self.capture.tap(x, y, jitter_px=self.cfg.tap_jitter_px)
 
     def _swipe_tray_up(self, label: str = "VIP"):
-        """Vuốt cuộn khay item lên để lộ dòng kế tiếp (thao tác vuốt chuẩn 200ms)."""
+        """Vuốt cuộn khay item lên kèm độ lệch ngẫu nhiên toạ độ và thời gian vuốt tự nhiên."""
         self._check_stop()
         w, h = self.cfg.target_width, self.cfg.target_height
-        x1 = int(self.cfg.swipe_vip9_start_ratio[0] * w)
-        y1 = int(self.cfg.swipe_vip9_start_ratio[1] * h)
-        x2 = int(self.cfg.swipe_vip9_end_ratio[0] * w)
-        y2 = int(self.cfg.swipe_vip9_end_ratio[1] * h)
-        self.capture.swipe(x1, y1, x2, y2, duration=0.20)
-        time.sleep(self.cfg.wait_after_scroll)
+        # Thêm độ lệch ngẫu nhiên X (±15px) và Y (±10px) cho điểm chạm và điểm nhả
+        x1 = int(self.cfg.swipe_vip9_start_ratio[0] * w) + random.randint(-15, 15)
+        y1 = int(self.cfg.swipe_vip9_start_ratio[1] * h) + random.randint(-10, 10)
+        x2 = int(self.cfg.swipe_vip9_end_ratio[0] * w) + random.randint(-15, 15)
+        y2 = int(self.cfg.swipe_vip9_end_ratio[1] * h) + random.randint(-10, 10)
+        # Thời gian vuốt biến thiên tự nhiên 180ms - 240ms
+        dur = random.uniform(0.18, 0.24)
+        self.capture.swipe(x1, y1, x2, y2, duration=dur)
+        time.sleep(self.cfg.wait_after_scroll + random.uniform(0.02, 0.06))
 
     def _swipe_tray_down(self, label: str = "VIP", times: int = 1):
-        """Vuốt cuộn khay item xuống để trở về vị trí đầu, hiện full Dòng 1 và 2 (thao tác vuốt chuẩn 200ms)."""
+        """Vuốt cuộn khay item xuống kèm độ lệch ngẫu nhiên toạ độ và thời gian vuốt tự nhiên."""
         self._check_stop()
         w, h = self.cfg.target_width, self.cfg.target_height
-        x1 = int(self.cfg.swipe_vip9_end_ratio[0] * w)
-        y1 = int(self.cfg.swipe_vip9_end_ratio[1] * h)
-        x2 = int(self.cfg.swipe_vip9_start_ratio[0] * w)
-        y2 = int(self.cfg.swipe_vip9_start_ratio[1] * h)
         for i in range(times):
-            self.capture.swipe(x1, y1, x2, y2, duration=0.20)
-            time.sleep(self.cfg.wait_after_scroll)
+            x1 = int(self.cfg.swipe_vip9_end_ratio[0] * w) + random.randint(-15, 15)
+            y1 = int(self.cfg.swipe_vip9_end_ratio[1] * h) + random.randint(-10, 10)
+            x2 = int(self.cfg.swipe_vip9_start_ratio[0] * w) + random.randint(-15, 15)
+            y2 = int(self.cfg.swipe_vip9_start_ratio[1] * h) + random.randint(-10, 10)
+            dur = random.uniform(0.18, 0.24)
+            self.capture.swipe(x1, y1, x2, y2, duration=dur)
+            time.sleep(self.cfg.wait_after_scroll + random.uniform(0.02, 0.06))
 
     def _swipe_vip9_up(self):
         self._swipe_tray_up("VIP9")
@@ -468,10 +472,14 @@ class GameBot:
 
         if choice == "odd":
             cx, cy = self.cfg.odd_btn_pos
+            cx += random.randint(-20, 20)
+            cy += random.randint(-12, 12)
             logger.info(f"🎲 [Cược ODD] Bấm nút LẺ (ODD) tại ({cx}, {cy})")
             self._tap(cx, cy, label="Select ODD")
         else:
             cx, cy = self.cfg.even_btn_pos
+            cx += random.randint(-20, 20)
+            cy += random.randint(-12, 12)
             logger.info(f"🎲 [Cược EVEN] Bấm nút CHẴN (EVEN) tại ({cx}, {cy})")
             self._tap(cx, cy, label="Select EVEN")
         return True
@@ -566,7 +574,10 @@ class GameBot:
 
         for r_idx in range(1, max_rounds + 1):
             self._check_stop()
-            self._tap(even_x, even_y, label=f"Bet EVEN #{r_idx}")
+            # Lệch tâm nút cược EVEN ngẫu nhiên (±20px chiều X, ±12px chiều Y) mô phỏng ngón tay người bấm
+            bet_x = even_x + random.randint(-20, 20)
+            bet_y = even_y + random.randint(-12, 12)
+            self._tap(bet_x, bet_y, label=f"Bet EVEN #{r_idx}")
 
             # Chờ và nhận quà của lượt này (có skip hoạt ảnh an toàn)
             t_wait_round = time.perf_counter()
@@ -691,8 +702,9 @@ class GameBot:
                             should_play = True
 
                     if should_play:
-                        cx = self.cfg.target_width // 2
-                        cy = target_row.center[1]
+                        # Click vào thân dòng item: lệch ngẫu nhiên trục X (±35px) và trục Y (±15px) mô phỏng người chạm
+                        cx = self.cfg.target_width // 2 + random.randint(-35, 35)
+                        cy = target_row.center[1] + random.randint(-15, 15)
                         logger.info(f"💎 [VIP7] Chọn Dòng #{idx + 1} ({target_type})")
                         self._tap(cx, cy, label=f"Click Center Row #{idx + 1}")
                         self.play_diamond_row(max_rounds, vip_name="VIP7")
@@ -735,8 +747,8 @@ class GameBot:
                         should_play = True
 
                 if should_play:
-                    cx = self.cfg.target_width // 2
-                    cy = roi_r3.center[1]
+                    cx = self.cfg.target_width // 2 + random.randint(-35, 35)
+                    cy = roi_r3.center[1] + random.randint(-15, 15)
                     logger.info(f"💎 [VIP7] Chọn Dòng 3 ({target_type_r3})")
                     self._tap(cx, cy, label="Click Row 3 (Scrolled)")
                     self.play_diamond_row(max_rounds, vip_name="VIP7")
@@ -797,8 +809,8 @@ class GameBot:
                             should_play = True
 
                     if should_play:
-                        cx = self.cfg.target_width // 2
-                        cy = target_row.center[1]
+                        cx = self.cfg.target_width // 2 + random.randint(-35, 35)
+                        cy = target_row.center[1] + random.randint(-15, 15)
                         logger.info(f"💎 [VIP9] Chọn Dòng #{idx + 1} ({target_type})")
                         self._tap(cx, cy, label=f"Click Center Row #{idx + 1}")
                         self.play_diamond_row(max_rounds, vip_name="VIP9")
@@ -844,8 +856,8 @@ class GameBot:
                         should_play = True
 
                 if should_play:
-                    cx = self.cfg.target_width // 2
-                    cy = roi_r3.center[1]
+                    cx = self.cfg.target_width // 2 + random.randint(-35, 35)
+                    cy = roi_r3.center[1] + random.randint(-15, 15)
                     logger.info(f"💎 [VIP9] Chọn Dòng 3 ({target_type_r3})")
                     self._tap(cx, cy, label="Click Row 3 (Scrolled)")
                     self.play_diamond_row(max_rounds, vip_name="VIP9")
@@ -879,8 +891,8 @@ class GameBot:
                         should_play = True
 
                 if should_play:
-                    cx = self.cfg.target_width // 2
-                    cy = roi_r4.center[1]
+                    cx = self.cfg.target_width // 2 + random.randint(-35, 35)
+                    cy = roi_r4.center[1] + random.randint(-15, 15)
                     logger.info(f"💎 [VIP9] Chọn Dòng 4 ({target_type_r4})")
                     self._tap(cx, cy, label="Click Row 4 (Scrolled)")
                     self.play_diamond_row(max_rounds, vip_name="VIP9")
