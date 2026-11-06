@@ -133,7 +133,7 @@ class BotConfig:
     wait_after_even_odd: float = 0.04   # Giảm còn 40ms sau khi bấm Even/Odd
     wait_after_rut_lui: float = 0.05    # Giảm còn 50ms sau khi bấm Rút lui
     wait_after_reset: float = 0.20      # Giảm còn 200ms sau khi bấm Reset
-    wait_after_scroll: float = 0.15     # Rút ngắn còn 150ms sau khi cuộn gạt nhanh
+    wait_after_scroll: float = 0.35     # Đợi swipe và quán tính cuộn dừng hẳn (350ms)
 
     # Độ lệch pixel ngẫu nhiên khi tap
     tap_jitter_px: int = 4

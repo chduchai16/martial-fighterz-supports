@@ -222,24 +222,29 @@ class VisionEngine:
         for b in clean_boxes:
             added = False
             cy_b = b[1] + b[3] / 2.0
-            bot_b = b[1] + b[3]
             for cl in clusters:
                 last = cl[-1]
                 cy_last = last[1] + last[3] / 2.0
-                bot_last = last[1] + last[3]
-                # Các chữ số cùng hàng phải đồng trục tâm Y (<= 3.5px) và bằng đáy Y (<= 3.5px), tránh gom tia lửa vũ khí phía trên
-                if abs(cy_b - cy_last) <= int(3.5 * scale) and abs(bot_b - bot_last) <= int(3.5 * scale) and (b[0] - (last[0] + last[2])) <= int(12 * scale):
+                dist_x = b[0] - (last[0] + last[2])
+                # Các chữ số cùng hàng phải đồng trục tâm Y (<= 3.5px) và khoảng cách X từ 1px đến 14px (không đè chồng nhau)
+                if abs(cy_b - cy_last) <= int(3.5 * scale) and (int(1 * scale) <= dist_x <= int(14 * scale)):
                     cl.append(b)
                     added = True
                     break
             if not added:
                 clusters.append([b])
 
-        if not clusters:
+        # Lọc bỏ các cụm đơn lẻ ở rìa trái (bx < 35) vì số 1 chữ số trong game luôn canh lề phải ở bx >= 35
+        valid_clusters = []
+        for cl in clusters:
+            if len(cl) >= 2 or cl[0][0] >= int(35 * scale):
+                valid_clusters.append(cl)
+
+        if not valid_clusters:
             return strip, []
 
         # Chọn cụm số: ưu tiên cụm có nhiều chữ số (số 2 chữ số trở lên), nếu cùng số chữ số thì chọn cụm nằm ở đáy chân avatar (bottom Y lớn nhất)
-        best_cl = max(clusters, key=lambda cl: (len(cl), max(b[1] + b[3] for b in cl)))
+        best_cl = max(valid_clusters, key=lambda cl: (len(cl), max(b[1] + b[3] for b in cl)))
         best_cl.sort(key=lambda b: b[0])
         return strip, best_cl
 
@@ -250,6 +255,8 @@ class VisionEngine:
         2. Chữ số đó phải có cấu trúc hình học lỗ rỗng màu đen ở tâm.
         3. Phân biệt với số 9: Số 0 là vòng tròn đối xứng đều ở nửa dưới (tỉ lệ pixel vàng trái/phải >= 0.88),
            trong khi số 9 có đuôi thò sang phải và nửa dưới bên trái rỗng (tỉ lệ < 0.75).
+        4. Phân biệt với số 6: Số 0 có vòng cung vàng khép kín ở góc trên bên phải (top_right_yellow >= 35),
+           trong khi số 6 có đuôi vểnh sang trái nên góc trên bên phải rỗng (< 25px vàng).
         """
         strip, digits = self._extract_digit_boxes(frame, row_roi)
         if len(digits) != 1:
@@ -266,8 +273,19 @@ class VisionEngine:
         if black_cnt < 12:
             return False
 
-        # Phân biệt số 0 và số 9 dựa trên tính đối xứng nửa dưới:
         h_p, w_p = patch.shape[:2]
+        scale = frame.shape[1] / 1080.0
+
+        # Phân biệt số 0 và số 6: Góc trên bên phải của số 0 là vòng cung vàng đầy đủ (>= 35px),
+        # trong khi số 6 có nét móc sang trái nên góc trên bên phải rỗng (< 25px)
+        top_right = patch[:int(0.35 * h_p), int(0.55 * w_p):]
+        if top_right.size > 0:
+            hsv_tr = cv2.cvtColor(top_right, cv2.COLOR_BGR2HSV)
+            mask_tr = cv2.inRange(hsv_tr, np.array([12, 160, 160], dtype=np.uint8), np.array([30, 255, 255], dtype=np.uint8))
+            if np.count_nonzero(mask_tr) < int(35 * (scale * scale)):
+                return False  # Góc trên bên phải rỗng -> Là số 6, không phải số 0!
+
+        # Phân biệt số 0 và số 9 dựa trên tính đối xứng nửa dưới:
         bottom_patch = patch[int(0.40 * h_p):, :]
         mid_x = bottom_patch.shape[1] // 2
         hsv_b = cv2.cvtColor(bottom_patch, cv2.COLOR_BGR2HSV)

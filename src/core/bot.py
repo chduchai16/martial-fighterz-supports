@@ -93,18 +93,18 @@ class GameBot:
         self.capture.tap(x, y, jitter_px=self.cfg.tap_jitter_px)
 
     def _swipe_tray_up(self, label: str = "VIP"):
-        """Vuốt cuộn khay item lên để lộ dòng kế tiếp (thao tác gạt nhanh 100ms)."""
+        """Vuốt cuộn khay item lên để lộ dòng kế tiếp (thao tác vuốt chuẩn 200ms)."""
         self._check_stop()
         w, h = self.cfg.target_width, self.cfg.target_height
         x1 = int(self.cfg.swipe_vip9_start_ratio[0] * w)
         y1 = int(self.cfg.swipe_vip9_start_ratio[1] * h)
         x2 = int(self.cfg.swipe_vip9_end_ratio[0] * w)
         y2 = int(self.cfg.swipe_vip9_end_ratio[1] * h)
-        self.capture.swipe(x1, y1, x2, y2, duration=0.10)
+        self.capture.swipe(x1, y1, x2, y2, duration=0.20)
         time.sleep(self.cfg.wait_after_scroll)
 
     def _swipe_tray_down(self, label: str = "VIP", times: int = 1):
-        """Vuốt cuộn khay item xuống để trở về vị trí đầu, hiện full Dòng 1 và 2 (gạt nhanh 100ms)."""
+        """Vuốt cuộn khay item xuống để trở về vị trí đầu, hiện full Dòng 1 và 2 (thao tác vuốt chuẩn 200ms)."""
         self._check_stop()
         w, h = self.cfg.target_width, self.cfg.target_height
         x1 = int(self.cfg.swipe_vip9_end_ratio[0] * w)
@@ -112,7 +112,7 @@ class GameBot:
         x2 = int(self.cfg.swipe_vip9_start_ratio[0] * w)
         y2 = int(self.cfg.swipe_vip9_start_ratio[1] * h)
         for i in range(times):
-            self.capture.swipe(x1, y1, x2, y2, duration=0.10)
+            self.capture.swipe(x1, y1, x2, y2, duration=0.20)
             time.sleep(self.cfg.wait_after_scroll)
 
     def _swipe_vip9_up(self):
@@ -161,9 +161,12 @@ class GameBot:
             or (enable_phuc_tung and best_type == "PHUC_TUNG_C" and best_match.confidence >= phuc_tung_threshold)
             or (enable_coin_300k and best_type == "COIN_300K" and best_match.confidence >= coin_threshold)
         )
-        if is_found:
+        if is_found and best_roi:
             best_match.found = True
-            return best_match, best_type, best_roi
+            # Tự động căn chỉnh đỉnh dòng chuẩn xác theo tâm y của vật phẩm tìm thấy (cy - 125px):
+            actual_cy = best_match.y + best_match.h // 2
+            accurate_roi = Rect(x=best_roi.x, y=max(0, actual_cy - 125), w=best_roi.w, h=250)
+            return best_match, best_type, accurate_roi
 
         # Quét fallback toàn vùng nếu có
         if fallback_tray_roi is not None:
@@ -178,7 +181,7 @@ class GameBot:
             )
             if match_fb.found:
                 cy = match_fb.y + match_fb.h // 2
-                dyn_roi = Rect(x=fallback_tray_roi.x, y=max(0, cy - 130), w=fallback_tray_roi.w, h=260)
+                dyn_roi = Rect(x=fallback_tray_roi.x, y=max(0, cy - 125), w=fallback_tray_roi.w, h=250)
                 return match_fb, target_type_fb, dyn_roi
 
         return best_match, "NONE", best_roi
