@@ -152,19 +152,25 @@ class VisionEngine:
         self,
         frame: np.ndarray,
         row_roi: Rect,
-        min_threshold: float = 0.80
+        min_threshold: float = 0.75
     ) -> MatchResult:
         """
         Kiểm tra một dòng cụ thể xem có chứa Kim Cương hay không.
-        Sử dụng DUY NHẤT một mẫu chuẩn 'kim_cuong' (kim_cuong_icon.png) theo yêu cầu.
+        So khớp song song 'kim_cuong' và 'kim_cuong_inner' để chống trượt khi icon có hiệu ứng lấp lánh/chớp sáng.
         """
-        match = self.find_template(
-            frame=frame,
-            template_key_or_path="kim_cuong",
-            threshold=min_threshold,
-            roi=row_roi
-        )
-        return match
+        best_match = MatchResult(found=False, confidence=0.0)
+        for key in ["kim_cuong", "kim_cuong_inner"]:
+            match = self.find_template(
+                frame=frame,
+                template_key_or_path=key,
+                threshold=min_threshold,
+                roi=row_roi
+            )
+            if match.confidence > best_match.confidence:
+                best_match = match
+
+        best_match.found = bool(best_match.confidence >= min_threshold)
+        return best_match
 
     def is_input_zero(self, frame: np.ndarray, row_roi: Rect) -> bool:
         """
@@ -497,43 +503,22 @@ class VisionEngine:
         self,
         frame: np.ndarray,
         row_roi: Rect,
-        min_threshold: float = 0.80,
-        enable_phuc_tung: bool = False,
-        phuc_tung_threshold: float = 0.78,
+        min_threshold: float = 0.75,
         enable_coin_300k: bool = False,
-        coin_threshold: float = 0.80
+        coin_threshold: float = 0.75
     ) -> Tuple[MatchResult, str]:
         """
         Kiểm tra một dòng cụ thể xem có chứa mục tiêu nhận quà hay không:
         1. Luôn ưu tiên kiểm tra Kim Cương: 'kim_cuong_inner', 'kim_cuong'
-        2. Nếu bật enable_phuc_tung: kiểm tra thêm Phục Tùng C ('phuc_tung_c_inner', 'phuc_tung_c_icon', 'phuc_tung_c_text')
-        3. Nếu bật enable_coin_300k: kiểm tra thêm phần thưởng 300,000 Coin ('coin_300k', 'coin_300000_text')
-        Trả về (MatchResult, target_type) với target_type là 'DIAMOND', 'PHUC_TUNG_C', 'COIN_300K' hoặc 'NONE'.
+        2. Nếu bật enable_coin_300k: kiểm tra thêm phần thưởng 300,000 Coin ('coin_300k', 'coin_300000_text')
+        Trả về (MatchResult, target_type) với target_type là 'DIAMOND', 'COIN_300K' hoặc 'NONE'.
         """
         # 1. Ưu tiên kiểm tra Kim Cương
         diamond_match = self.check_row_for_diamond(frame, row_roi, min_threshold)
         if diamond_match.found:
             return diamond_match, "DIAMOND"
 
-        # 2. Nếu bật săn thêm Phục Tùng
-        if enable_phuc_tung:
-            best_pt = MatchResult(found=False, confidence=0.0)
-            pt_keys = ["phuc_tung_c_inner", "phuc_tung_c_icon", "phuc_tung_c_text"]
-            for pt_key in pt_keys:
-                match_pt = self.find_template(
-                    frame=frame,
-                    template_key_or_path=pt_key,
-                    threshold=0.0,
-                    roi=row_roi
-                )
-                if match_pt.confidence > best_pt.confidence:
-                    best_pt = match_pt
-
-            if best_pt.confidence >= phuc_tung_threshold:
-                best_pt.found = True
-                return best_pt, "PHUC_TUNG_C"
-
-        # 3. Nếu bật xả kho Coin 300k
+        # 2. Nếu bật xả kho Coin 300k
         if enable_coin_300k:
             best_coin = MatchResult(found=False, confidence=0.0)
             coin_keys = ["coin_300k", "coin_300000_text"]

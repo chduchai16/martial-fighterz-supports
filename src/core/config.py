@@ -99,10 +99,9 @@ class BotConfig:
     scrcpy_max_fps: int = 30
     scrcpy_bitrate: int = 8000000
     
-    # Template matching thresholds (Kim Cương >= 0.80 theo yêu cầu)
+    # Template matching thresholds (Kim Cương >= 0.75 an toàn chống trượt khi lấp lánh)
     default_threshold: float = 0.80
-    diamond_threshold: float = 0.80  # Ngưỡng nhận diện Kim Cương >= 0.80
-    phuc_tung_threshold: float = 0.78  # Ngưỡng nhận diện Phục Tùng (C & D)
+    diamond_threshold: float = 0.75  # Ngưỡng nhận diện Kim Cương >= 0.75 (an toàn, vật phẩm khác chỉ đạt <= 0.52)
     button_threshold: float = 0.78
     rut_lui_threshold: float = 0.72  # Ngưỡng nhận diện nút Rút lui (kèm ROI chống nhận diện nhầm)
     ok_threshold: float = 0.76
@@ -110,8 +109,7 @@ class BotConfig:
     # Chiến lược chọn Even/Odd (Mặc định chọn CHẴN)
     even_odd_strategy: str = "even"
 
-    # Tuỳ chọn ăn thêm Phục Tùng C & D, xả Coin 300k và Ngôn ngữ game
-    enable_phuc_tung: bool = False
+    # Tuỳ chọn xả Coin 300k và Ngôn ngữ game
     dump_coin_300k: bool = True  # Tự động xả Coin 300k khi input item > 30
     coin_threshold: float = 0.75  # Ngưỡng nhận diện reward 300,000 Coin (đặt 0.75 an toàn, chống trượt)
     game_language: str = "auto"  # "auto", "vi", "en"
@@ -278,14 +276,14 @@ class BotConfig:
     def vip9_scrolled_rows(self) -> List[Rect]:
         return self.vip9_scrolled_row4_candidates
 
-    # Toạ độ click trực tiếp dự phòng
+    # Toạ độ click trực tiếp xúc xắc VIP7 (865, 445) và VIP9 (988, 445) trên 1080x1920
     @property
     def vip7_tab_pos(self) -> Tuple[int, int]:
-        return int(0.785 * self.target_width), int(0.228 * self.target_height)
+        return int(0.801 * self.target_width), int(0.232 * self.target_height)
 
     @property
     def vip9_tab_pos(self) -> Tuple[int, int]:
-        return int(0.913 * self.target_width), int(0.228 * self.target_height)
+        return int(0.915 * self.target_width), int(0.232 * self.target_height)
 
     @property
     def even_btn_pos(self) -> Tuple[int, int]:

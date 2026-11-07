@@ -274,16 +274,6 @@ class ModernBotApp(ctk.CTk):
         self.strategy_cb.set("even (Ưu tiên Chẵn)")
         self.strategy_cb.pack(fill="x", padx=16, pady=(0, 8))
 
-        # Switch: Ăn thêm Phục Tùng (C & D)
-        self.phuc_tung_switch = ctk.CTkSwitch(
-            left_card,
-            text="Ăn thêm Phục Tùng (C & D)",
-            font=ctk.CTkFont(family="Segoe UI", size=12),
-            text_color=("#334155", "#cbd5e1"),
-            progress_color="#0284c7"
-        )
-        self.phuc_tung_switch.pack(anchor="w", padx=16, pady=(2, 4))
-
         # Switch: Xả Coin 300k khi nguyên liệu > 30
         self.dump_coin_switch = ctk.CTkSwitch(
             left_card,
@@ -295,7 +285,7 @@ class ModernBotApp(ctk.CTk):
         self.dump_coin_switch.select()  # Mặc định bật
         self.dump_coin_switch.pack(anchor="w", padx=16, pady=(2, 6))
 
-        # Nhãn & Lựa chọn Ngôn ngữ Game (ở bên dưới mục Phục Tùng)
+        # Nhãn & Lựa chọn Ngôn ngữ Game
         ctk.CTkLabel(
             left_card,
             text="Ngôn ngữ Game:",
@@ -495,11 +485,13 @@ class ModernBotApp(ctk.CTk):
         self.txt_log.tag_config("CRITICAL", foreground=error_color)
         self.txt_log.tag_config("DEBUG", foreground=debug_color)
 
-        # Tags in đậm đặc biệt: Tìm thấy Kim Cương & Kết thúc vòng lặp
-        self.txt_log.tag_config("DIAMOND_BOLD", font=("Consolas", 11, "bold"), foreground=diamond_color)
+        # Tags in đậm đặc biệt: Tìm thấy Kim Cương (font to 12 bold, màu tím/xanh nổi bật), Kết thúc vòng lặp, Dừng bot
+        self.txt_log.tag_config("DIAMOND_BOLD", font=("Consolas", 12, "bold"), foreground="#7c3aed" if self.theme_switch.get() == 0 else "#a78bfa")
         self.txt_log.tag_config("CYCLE_BOLD", font=("Consolas", 11, "bold"), foreground=cycle_color)
+        self.txt_log.tag_config("STOP_BOLD", font=("Consolas", 12, "bold"), foreground="#dc2626")
         self.txt_log.tag_raise("DIAMOND_BOLD")
         self.txt_log.tag_raise("CYCLE_BOLD")
+        self.txt_log.tag_raise("STOP_BOLD")
 
     def _setup_logging(self):
         queue_handler = QueueLogHandler(self.log_queue)
@@ -522,6 +514,9 @@ class ModernBotApp(ctk.CTk):
         # In đậm khi hoàn thành/kết thúc vòng lặp
         elif "🏁" in msg or ("HOÀN THÀNH VÒNG" in msg_upper and "TRONG" in msg_upper) or "KẾT THÚC VÒNG" in msg_upper:
             tags.append("CYCLE_BOLD")
+        # In to và màu đỏ nổi bật khi người dùng bấm dừng
+        elif "🛑" in msg or "ĐÃ DỪNG LẠI" in msg_upper:
+            tags.append("STOP_BOLD")
         return tuple(tags)
 
     def _append_log_line(self, level: str, msg: str):
@@ -609,8 +604,7 @@ class ModernBotApp(ctk.CTk):
         else:
             config.even_odd_strategy = "random"
 
-        # Phục Tùng C & D, Xả Coin 300k và Ngôn ngữ
-        config.enable_phuc_tung = (self.phuc_tung_switch.get() == 1)
+        # Xả Coin 300k và Ngôn ngữ
         config.dump_coin_300k = (self.dump_coin_switch.get() == 1)
         lang_raw = self.lang_cb.get()
         if "vi" in lang_raw:
@@ -665,13 +659,12 @@ class ModernBotApp(ctk.CTk):
             )
             self.btn_run.configure(state="normal", fg_color="#059669", text_color="#ffffff")
             self.btn_stop.configure(state="disabled", fg_color=("#cbd5e1", "#334155"), text_color=("#64748b", "#94a3b8"))
-            logging.info("Tác vụ đã dừng lại.")
+            logging.info("🛑 TÁC VỤ ĐÃ DỪNG LẠI HOÀN TOÀN")
         self.after(0, _update)
 
     def stop_task(self):
         if not self.is_running:
             return
-        logging.info("🛑 Đang gửi tín hiệu dừng tới bot...")
         self.stop_event.set()
         if self.bot_instance:
             self.bot_instance.stop()

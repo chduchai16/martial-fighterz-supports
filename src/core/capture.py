@@ -260,4 +260,3 @@ class FastCapture:
                 except Exception:
                     pass
             self._shell_proc = None
-        logger.info("FastCapture đã dừng và đóng Persistent Shell an toàn.")
