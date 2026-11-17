@@ -499,6 +499,57 @@ class VisionEngine:
         # Hàng chục không phải 1, 2, 3 (là 4, 5, 6, 7, 8, 9) -> chắc chắn > 30
         return True
 
+    def is_frequency_zero(self, frame: np.ndarray, row_roi: Rect) -> bool:
+        """
+        Kiểm tra số lượt đổi của dòng (Frequency: X) có bằng 0 hay không:
+        - Dòng chữ 'Frequency: ' nằm ở giữa dòng: Y [cy - 10 .. cy + 125], X [220 .. 480].
+        - Định vị template 'freq_prefix' ('Frequency:').
+        - Cắt ô chữ số ngay sau dấu ':' và so khớp với 'freq_d0'.
+        - Trả về True nếu Frequency == 0 (đã hết sạch lượt đổi), ngược lại False (còn lượt).
+        """
+        h, w = frame.shape[:2]
+        scale = w / 1080.0
+        cy = row_roi.y + row_roi.h // 2
+        y1 = max(0, int((cy - 10) * scale))
+        y2 = min(h, int((cy + 125) * scale))
+        x1 = int(220 * scale)
+        x2 = int(480 * scale)
+        strip = frame[y1:y2, x1:x2]
+        if strip.size == 0:
+            return False
+
+        tpl_prefix = self._raw_templates.get("freq_prefix")
+        tpl_d0 = self._raw_templates.get("freq_d0")
+        if tpl_prefix is None or tpl_d0 is None:
+            return False
+
+        if abs(scale - 1.0) > 0.05:
+            tpl_prefix = cv2.resize(tpl_prefix, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_LINEAR)
+            tpl_d0 = cv2.resize(tpl_d0, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_LINEAR)
+
+        if strip.shape[0] < tpl_prefix.shape[0] or strip.shape[1] < tpl_prefix.shape[1]:
+            return False
+
+        res = cv2.matchTemplate(strip, tpl_prefix, cv2.TM_CCOEFF_NORMED)
+        _, max_v, _, max_l = cv2.minMaxLoc(res)
+        if max_v < 0.70:
+            return False
+
+        fx, fy = max_l
+        fw, fh = tpl_prefix.shape[1], tpl_prefix.shape[0]
+
+        crop_num = strip[fy:fy + fh, fx + fw:min(strip.shape[1], fx + fw + int(35 * scale))]
+        if crop_num.shape[0] < tpl_d0.shape[0] or crop_num.shape[1] < tpl_d0.shape[1]:
+            new_h = max(crop_num.shape[0], tpl_d0.shape[0] + 4)
+            new_w = max(crop_num.shape[1], tpl_d0.shape[1] + 4)
+            p = np.zeros((new_h, new_w, 3), dtype=np.uint8)
+            p[:crop_num.shape[0], :crop_num.shape[1]] = crop_num
+            crop_num = p
+
+        res_d0 = cv2.matchTemplate(crop_num, tpl_d0, cv2.TM_CCOEFF_NORMED)
+        _, v0, _, _ = cv2.minMaxLoc(res_d0)
+        return v0 >= 0.85
+
     def check_row_for_targets(
         self,
         frame: np.ndarray,

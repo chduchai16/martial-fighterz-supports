@@ -218,11 +218,11 @@ class FastCapture:
 
         return None
 
-    def tap(self, x: int, y: int, jitter_px: int = 12):
+    def tap(self, x: int, y: int, jitter_px: int = 6):
         """
-        Tap tự nhiên giống ngón tay người:
-        1. Jitter toạ độ ngẫu nhiên linh hoạt quanh tâm.
-        2. Chuyển sang swipe tại chỗ với thời gian nhấn giữ 60ms-110ms mô phỏng ngón tay chạm màn hình.
+        Tap chuẩn xác và tức thì qua Persistent Shell:
+        1. Jitter toạ độ ngẫu nhiên nhẹ quanh tâm nút.
+        2. Gửi lệnh input tap x y để game nhận sự kiện click tức thì (100% ăn lệnh).
         """
         if self._explicitly_stopped:
             return
@@ -233,8 +233,7 @@ class FastCapture:
         x = max(0, x)
         y = max(0, y)
 
-        press_ms = random.randint(60, 110)
-        self._send_shell_cmd(f"input swipe {x} {y} {x} {y} {press_ms}")
+        self._send_shell_cmd(f"input tap {x} {y}")
 
     def swipe(self, x1: int, y1: int, x2: int, y2: int, duration: float = 0.3):
         """Vuốt cuộn màn hình qua Persistent Shell."""

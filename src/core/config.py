@@ -165,6 +165,8 @@ class BotConfig:
         "coin_300k": IMAGES_DIR / "coin_300k.png",
         "coin_300000_text": IMAGES_DIR / "coin_300000_text.png",
         "loading_text": IMAGES_DIR / "loading_text.png",
+        "freq_prefix": IMAGES_DIR / "freq_prefix.png",
+        "freq_d0": IMAGES_DIR / "freq_d0.png",
     })
 
     # Toạ độ Ô THỨ 1 (Min Earning) chuẩn xác ôm trọn khung vật phẩm (230x250 px)
@@ -201,11 +203,14 @@ class BotConfig:
         (0.5833, 0.8042, 0.2130, 0.1302),  # Dự phòng (y=1544)
     ])
 
-    # Toạ độ vuốt cuộn nằm an toàn bên trong khay item (tránh thanh điều hướng Home/Adventure ở đáy)
-    # Swipe UP: Chạm tại Y=82% vuốt lên Y=60%
-    # Swipe DOWN: Chạm tại Y=60% vuốt xuống Y=82%
+    # Toạ độ vuốt cuộn nằm an toàn bên trong khay item (tránh thanh điều hướng Home/Adventure ở đáy và đám mây How to Play ở đỉnh)
+    # Khay item nằm ở Y từ 60% đến 88%
+    # Swipe UP: Chạm tại Y=82% vuốt lên Y=62% (kéo lộ dòng 3 và 4)
+    # Swipe DOWN: Chạm tại Y=64% vuốt xuống Y=85% (nằm trọn bên trong lòng khay item, kéo chạm trần)
     swipe_vip9_start_ratio: Tuple[float, float] = (0.40, 0.82)
-    swipe_vip9_end_ratio: Tuple[float, float] = (0.40, 0.60)
+    swipe_vip9_end_ratio: Tuple[float, float] = (0.40, 0.62)
+    swipe_down_start_ratio: Tuple[float, float] = (0.45, 0.64)
+    swipe_down_end_ratio: Tuple[float, float] = (0.45, 0.85)
 
     @property
     def vip7_initial_rows(self) -> List[Rect]:
